@@ -35,6 +35,14 @@ route.
 - The Windows Next SWC package is pinned to the matching official
   `@next/swc-win32-x64-msvc@16.3.0` package instead of the upstream
   `npm:null@*` alias.
+- `features/SparkIntegration/server/provider.ts` and
+  `app/api/spark-learning/route.ts` now provide the first read-only Spark
+  content bridge. It verifies the existing `spark_session` cookie, matches it
+  to `spark_accounts`, and never accepts a browser-supplied account ID.
+- `features/SparkIntegration/components/SparkVocabularyGame.tsx` is a thin
+  vertical slice that feeds approved Spark vocabulary into KanaDojo's existing
+  `VocabularyGame`; grammar remains a separate data kind and is not silently
+  converted into vocabulary questions.
 
 ## Verification evidence
 
@@ -50,6 +58,14 @@ route.
   adapter.
 - `npm test`: has existing upstream Conjugator/Resources property-test
   failures; no Spark integration code is involved.
+- `npm run check`: passed with 0 errors and 482 upstream warnings after the
+  adapter was added.
+- Spark live read-only audit on 2026-08-12: `v_public_vocabulary` returned
+  11,304 rows with 0 invalid required-field rows and 0 duplicate slugs;
+  `v_study_grammar_points` returned 1,000 rows with the same 0/0 quality
+  result. No writes were performed.
+- Anonymous local request to
+  `/api/spark-learning?kind=vocabulary&level=n5`: HTTP 401 with no data.
 - `npm run build`: not run because upstream `AGENTS.md` explicitly excludes it
   from verification.
 - Local home-route probing still returns an upstream locale middleware 307
@@ -67,9 +83,8 @@ route.
 
 ## Next controlled step
 
-Prepare, but do not execute, a server-side Spark adapter that reads the actual
-quality-gated vocabulary view and server-only grammar study view through the
-existing trusted session boundary. Before implementation, Aaron must approve
-the endpoint shape, level filtering, pronunciation/content mapping, AGPL
-source-offer plan, and whether the old Spark route remains visible during the
-replacement trial.
+Prepare the grammar-specific game shell and course/session mapping on top of
+the same adapter without mixing it into the vocabulary game. Before any
+production route replacement, migration, or deployment, Aaron must approve the
+endpoint shape, pronunciation/content mapping, AGPL source-offer plan, and
+whether the old Spark route remains visible during the replacement trial.

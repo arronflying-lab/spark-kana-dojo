@@ -1,8 +1,9 @@
 # Spark data adapter boundary
 
 This document defines the boundary for bringing Spark's vocabulary and
-grammar data into the KanaDojo downstream. It is deliberately an adapter
-contract, not a production data connection.
+grammar data into the KanaDojo downstream. The first server-side adapter is
+now implemented, but it remains a read-only integration contract; it is not a
+course import or a production deployment.
 
 ## What the current repositories actually provide
 
@@ -35,16 +36,52 @@ different source.
    `word`, `reading`, and `meanings[]` shape. Rich Spark fields remain in the
    source record for a later purpose-built question adapter.
 
-The future server provider must read these views through a trusted server
-boundary, enforce the public vocabulary quality gate, resolve the Spark
-account from the existing session, and never expose service credentials to
-the browser. This snapshot contains no Supabase client, API route, migration,
-production read, or production write.
+The server provider reads these views through a trusted server boundary,
+enforces the public vocabulary quality gate, resolves the Spark account from
+the existing session, and never exposes service credentials to the browser.
+This downstream contains the adapter and API route, but no migration,
+production import, or production write.
+
+## Implemented bridge
+
+- `features/SparkIntegration/server/provider.ts` reads the two approved views
+  with the server-only Supabase service-role client.
+- The existing `spark_session` HMAC cookie is verified and matched against
+  `spark_accounts`; no browser-provided account ID is accepted.
+- `GET /api/spark-learning?kind=vocabulary|grammar&level=n1..n5` is a private,
+  no-store endpoint. It returns only the selected content kind and a bounded
+  level slice.
+- `features/SparkIntegration/client.ts` is the browser-side fetch boundary;
+  it does not import Supabase or session secrets.
+- Invalid vocabulary rows (missing slug, headword, reading, or Chinese
+  meaning) are rejected by the mapper instead of becoming quiz items.
+
+The adapter intentionally uses only fields that are present in the verified
+views. Examples, collocations, and homograph traps remain empty for
+vocabulary until the database exposes an approved study-view contract.
+
+## Read-only live audit
+
+On 2026-08-12, a service-role read-only audit of the actual Spark database
+returned:
+
+- `v_public_vocabulary`: 11,304 rows; N1/N2/N3/N4/N5 = 3,789 / 3,086 /
+  2,224 / 970 / 1,235.
+- `v_study_grammar_points`: 1,000 rows; N1/N2/N3/N4/N5 = 288 / 230 / 213 /
+  176 / 93.
+- Required-field failures: 0 in both views.
+- Duplicate slugs: 0 in both views.
+- Writes performed: 0.
+
+The 1,000 grammar rows are grammar points, not the total JLPT question-bank
+count. The question bank remains outside this KanaDojo adapter until a
+separate mapping is approved.
 
 ## Next implementation gate
 
-Before connecting real data, Aaron must approve the exact server endpoint and
-the final vocabulary/grammar question mapping. That review must include a
-live count audit, missing-field audit, pronunciation policy, and the AGPL
-source-offer plan. Until then, the upstream KanaDojo content remains the
-only runnable data source.
+Before exposing the bridge through the user-facing KanaDojo game, Aaron must
+approve the final vocabulary/grammar question mapping and the AGPL
+source-offer plan. The remaining review must include a live count audit,
+missing-field audit, pronunciation policy, and a decision about the old Spark
+route. The bridge is ready for authenticated integration testing but does not
+write data, create course units, or replace the old route.

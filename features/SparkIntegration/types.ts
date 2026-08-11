@@ -34,18 +34,20 @@ export interface SparkGrammarRecord {
   comparisonMd: string | null;
 }
 
-export type SparkLearningRecord =
-  | SparkVocabularyRecord
-  | SparkGrammarRecord;
+export type SparkLearningRecord = SparkVocabularyRecord | SparkGrammarRecord;
 
 export interface SparkLearningDataProvider {
-  listVocabulary(level?: VocabLevel): Promise<SparkVocabularyRecord[]>;
-  listGrammar(level?: VocabLevel): Promise<SparkGrammarRecord[]>;
+  listVocabulary(
+    level?: VocabLevel,
+    limit?: number,
+  ): Promise<SparkVocabularyRecord[]>;
+  listGrammar(
+    level?: VocabLevel,
+    limit?: number,
+  ): Promise<SparkGrammarRecord[]>;
 }
 
-export function toKanaDojoVocabulary(
-  record: SparkVocabularyRecord,
-): IVocabObj {
+export function toKanaDojoVocabulary(record: SparkVocabularyRecord): IVocabObj {
   return {
     word: record.headword,
     reading: record.reading,

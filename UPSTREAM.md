@@ -32,14 +32,14 @@ separate deployed system until a later, separately approved replacement.
 ## Baseline verification
 
 - `npm ci --ignore-scripts --no-audit --no-fund`: passed (1171 packages)
-- `npm run check`: currently fails on 3 upstream TypeScript errors in
-  `features/CrazyMode/store/useCrazyModeStore.ts` and
-  `shared/ui-composite/Decorations/Decorations.tsx`; no Spark adapter file is
-  involved
+- `npm run check`: passed with 0 errors and 482 upstream ESLint warnings
 - `npm run dev`: Next reaches `Ready` locally after the official SWC package
   is present; the upstream locale middleware currently returns a local 307
   redirect for the home route and needs a separate upstream routing review
 - `npm test`: failed in upstream Conjugator/Resources property tests; no Spark
   integration code is involved in those failures
+- Spark read-only audit (2026-08-12): `v_public_vocabulary` 11,304 rows and
+  `v_study_grammar_points` 1,000 rows; both had 0 required-field failures and
+  0 duplicate slugs. No production write was performed.
 - `npm run build`: intentionally not used because the upstream `AGENTS.md`
   explicitly says not to use it as verification
