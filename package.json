@@ -141,7 +141,7 @@
     "vitest": "^3.2.4"
   },
   "optionalDependencies": {
-    "@next/swc-win32-x64-msvc": "npm:null@*"
+    "@next/swc-win32-x64-msvc": "16.3.0"
   },
   "overrides": {
     "postcss": "^8.5.10"
