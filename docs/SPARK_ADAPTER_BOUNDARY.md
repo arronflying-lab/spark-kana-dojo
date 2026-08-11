@@ -60,6 +60,14 @@ The adapter intentionally uses only fields that are present in the verified
 views. Examples, collocations, and homograph traps remain empty for
 vocabulary until the database exposes an approved study-view contract.
 
+The first user-facing framework slices are now present, still read-only:
+
+- `/vocabulary/spark` feeds the approved Spark vocabulary into KanaDojo's
+  existing vocabulary game.
+- `/grammar/spark` reads grammar points as a separate expandable study shell;
+  it does not convert grammar into vocabulary questions or invent a grammar
+  answer key.
+
 ## Read-only live audit
 
 On 2026-08-12, a service-role read-only audit of the actual Spark database
@@ -79,9 +87,10 @@ separate mapping is approved.
 
 ## Next implementation gate
 
-Before exposing the bridge through the user-facing KanaDojo game, Aaron must
-approve the final vocabulary/grammar question mapping and the AGPL
-source-offer plan. The remaining review must include a live count audit,
-missing-field audit, pronunciation policy, and a decision about the old Spark
-route. The bridge is ready for authenticated integration testing but does not
-write data, create course units, or replace the old route.
+Before production exposure, Aaron must approve the final vocabulary/grammar
+question mapping and complete the AGPL source-offer plan in
+`docs/AGPL_DEPLOYMENT_CHECKLIST.md`. The remaining review must include a live
+count audit, missing-field audit, pronunciation policy, and a decision about
+the old Spark route. The framework is ready for authenticated integration
+testing but does not write data, create course units, or replace the old
+route.

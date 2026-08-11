@@ -8,9 +8,9 @@ project first, and supplied `https://github.com/lingdojo/kana-dojo` as the
 framework source.
 
 This is an isolated local downstream of KanaDojo. It is not a fork of the
-private Spark portal, and it has not connected to the Spark production database,
-accounts, Supabase credentials, or the existing deployed `/portal/my/word-quest`
-route.
+private Spark portal. Its server adapter can read the approved Spark views only
+when the deployment supplies the existing server-side credentials; no
+production import, write, or route replacement has happened.
 
 ## Repository truth
 
@@ -22,6 +22,7 @@ route.
 - Windows compatibility commit: `aa70b2f fix: pin Windows Next SWC to matching version`
 - License: upstream `AGPL-3.0-or-later`; source-offer and attribution review
   is required before any network deployment or user access.
+- Release checklist: `docs/AGPL_DEPLOYMENT_CHECKLIST.md`.
 
 ## What is implemented
 
@@ -43,6 +44,10 @@ route.
   vertical slice that feeds approved Spark vocabulary into KanaDojo's existing
   `VocabularyGame`; grammar remains a separate data kind and is not silently
   converted into vocabulary questions.
+- `features/SparkIntegration/components/SparkGrammarStudy.tsx` and
+  `/grammar/spark` provide a separate, read-only grammar study shell using
+  Spark's `v_study_grammar_points` view. It displays existing examples and
+  stored lecture text only; it does not generate grammar questions.
 
 ## Verification evidence
 
@@ -75,16 +80,17 @@ route.
 ## Do not do next
 
 - Do not import Spark production data yet.
-- Do not add Supabase clients, service-role keys, API routes, account access,
-  migrations, or production deployment in this baseline.
+- Do not add credentials, migrations, production writes, or production
+  deployment in this baseline. The server-only Supabase adapter and private
+  read route are already implemented for controlled integration testing.
 - Do not copy KanaDojo authentication or database code into the Spark portal.
 - Do not fix unrelated upstream CrazyMode, Decorations, Conjugator, or
   Resources failures unless Aaron separately approves that scope.
 
 ## Next controlled step
 
-Prepare the grammar-specific game shell and course/session mapping on top of
-the same adapter without mixing it into the vocabulary game. Before any
-production route replacement, migration, or deployment, Aaron must approve the
-endpoint shape, pronunciation/content mapping, AGPL source-offer plan, and
-whether the old Spark route remains visible during the replacement trial.
+Run authenticated integration tests for `/vocabulary/spark` and
+`/grammar/spark`. Before any production route replacement, migration, or
+deployment, Aaron must approve the pronunciation/content mapping, complete
+the AGPL source-offer checklist, and decide whether the old Spark route
+remains visible during the replacement trial.
