@@ -162,9 +162,12 @@ const getAudioUrl = (basePath: string, hasOpus: boolean = true): string => {
 // Sound File URLs
 // =============================================================================
 
-const CORRECT_SOUND_BASE = '/sounds/correct';
-const ERROR_SOUND_BASE = '/sounds/error/error1/error1_1';
-const LONG_SOUND_BASE = '/sounds/long';
+const assetPath = (path: string): string =>
+  `${process.env.NEXT_PUBLIC_KANA_DOJO_BASE_PATH ?? ''}${path}`;
+
+const CORRECT_SOUND_BASE = assetPath('/sounds/correct');
+const ERROR_SOUND_BASE = assetPath('/sounds/error/error1/error1_1');
+const LONG_SOUND_BASE = assetPath('/sounds/long');
 const LONG_LOOP_VOLUME = 0.12;
 const LOOP_AUDIO_RELEASE_DELAY_MS = 2 * 60 * 1000;
 
@@ -415,7 +418,7 @@ export const useChristmas = () => {
     if (typeof window !== 'undefined' && !christmasAudio) {
       // mariah-carey.opus - Opus has excellent browser support (Chrome, Firefox, Safari 15+, Edge)
       // No WAV fallback exists for this file, but Opus is supported in all modern browsers
-      christmasAudio = new Audio('/sounds/mariah-carey.opus');
+      christmasAudio = new Audio(assetPath('/sounds/mariah-carey.opus'));
       christmasAudio.loop = true;
       christmasAudio.volume = 0.2;
 

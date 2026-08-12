@@ -17,7 +17,10 @@ const loadFacts = async (): Promise<string[]> => {
 
   factsLoadingPromise = (async () => {
     try {
-      const response = await fetch('/api/facts', { cache: 'force-cache' });
+      const basePath = process.env.NEXT_PUBLIC_KANA_DOJO_BASE_PATH ?? '';
+      const response = await fetch(`${basePath}/api/facts`, {
+        cache: 'force-cache',
+      });
       if (!response.ok) {
         throw new Error(`Facts request failed: ${response.status}`);
       }

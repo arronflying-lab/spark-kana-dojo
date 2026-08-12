@@ -15,9 +15,11 @@ export default function ServiceWorkerRegistration() {
     if (typeof window !== 'undefined' && 'serviceWorker' in navigator) {
     const registerServiceWorker = async () => {
       try {
-        const registration = await navigator.serviceWorker.register('/sw.js', {
-          scope: '/',
-        });
+        const basePath = process.env.NEXT_PUBLIC_KANA_DOJO_BASE_PATH ?? '';
+        const registration = await navigator.serviceWorker.register(
+          `${basePath}/sw.js`,
+          { scope: `${basePath || ''}/` },
+        );
 
         if (cancelled) return;
         updateInterval = setInterval(() => {

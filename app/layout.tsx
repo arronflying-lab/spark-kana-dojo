@@ -16,6 +16,8 @@ import SessionPrefetch from '@/shared/ui-composite/Performance/SessionPrefetch';
 
 const googleVerificationToken = process.env.GOOGLE_VERIFICATION_TOKEN || '';
 const msVerificationToken = process.env.MS_VERIFICATION_TOKEN || '';
+const kanaDojoBasePath = process.env.NEXT_PUBLIC_KANA_DOJO_BASE_PATH ?? '';
+const publicAssetPath = (path: string) => `${kanaDojoBasePath}${path}`;
 
 export const viewport: Viewport = {
   width: 'device-width',
@@ -30,7 +32,7 @@ export const viewport: Viewport = {
 
 export const metadata: Metadata = {
   metadataBase: new URL('https://kanadojo.com'),
-  manifest: '/manifest.json',
+  manifest: publicAssetPath('/manifest.json'),
   title: {
     default:
       'KanaDojo - Learn Japanese Hiragana, Katakana, Kanji & Vocabulary Online',
@@ -40,12 +42,12 @@ export const metadata: Metadata = {
     'Master Japanese with KanaDojo - a fun, aesthetic platform for learning Hiragana, Katakana, Kanji, and Vocabulary. Practice with interactive games, track progress, and customize your learning experience.',
   icons: {
     icon: [
-      { url: '/favicon.ico?v=2' },
-      { url: '/favicon.ico?v=2', sizes: '16x16', type: 'image/x-icon' },
-      { url: '/favicon.ico?v=2', sizes: '32x32', type: 'image/x-icon' },
+      { url: publicAssetPath('/favicon.ico?v=2') },
+      { url: publicAssetPath('/favicon.ico?v=2'), sizes: '16x16', type: 'image/x-icon' },
+      { url: publicAssetPath('/favicon.ico?v=2'), sizes: '32x32', type: 'image/x-icon' },
     ],
-    shortcut: '/favicon.ico?v=2',
-    apple: '/favicon.ico?v=2',
+    shortcut: publicAssetPath('/favicon.ico?v=2'),
+    apple: publicAssetPath('/favicon.ico?v=2'),
   },
   verification: {
     google: googleVerificationToken,

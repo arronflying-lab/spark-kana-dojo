@@ -54,7 +54,10 @@ export const loadDecorations = async (): Promise<string[]> => {
   if (decorationsCache) return decorationsCache;
   if (decorationsLoadingPromise) return decorationsLoadingPromise;
 
-  decorationsLoadingPromise = fetch('/data-kanji/decorations.json')
+  const basePath = process.env.NEXT_PUBLIC_KANA_DOJO_BASE_PATH ?? '';
+  decorationsLoadingPromise = fetch(
+    `${basePath}/data-kanji/decorations.json`,
+  )
     .then(res => res.json())
     .then((chars: string[]) => {
       decorationsCache = shuffle(chars);

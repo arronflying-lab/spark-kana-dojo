@@ -561,7 +561,8 @@ export const CLICK_SOUND_OPTIONS_BY_ID: Record<ClickSoundId, ClickSoundOption> =
 export function getClickSoundVariantBaseUrls(id: ClickSoundId): string[] {
   const option = CLICK_SOUND_OPTIONS_BY_ID[id];
   if (!option) return [];
+  const basePath = process.env.NEXT_PUBLIC_KANA_DOJO_BASE_PATH ?? '';
   return option.variants.map(
-    variant => `/sounds/monkeytype-pack/${option.id}/${variant}`,
+    variant => `${basePath}/sounds/monkeytype-pack/${option.id}/${variant}`,
   );
 }

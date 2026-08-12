@@ -4,11 +4,12 @@ import { useEffect } from 'react';
 
 const PREFETCH_KEY = 'kanadojo_prefetch_v1';
 
+const basePath = process.env.NEXT_PUBLIC_KANA_DOJO_BASE_PATH ?? '';
 const PREFETCH_URLS = [
-  '/data-kanji/decorations.json',
-  '/data-kanji/N5.json',
-  '/data-vocab/n5.json',
-  '/api/facts',
+  `${basePath}/data-kanji/decorations.json`,
+  `${basePath}/data-kanji/N5.json`,
+  `${basePath}/data-vocab/n5.json`,
+  `${basePath}/api/facts`,
 ];
 
 export default function SessionPrefetch() {

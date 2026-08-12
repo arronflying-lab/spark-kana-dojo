@@ -54,7 +54,8 @@ export const vocabDataService = {
     }
 
     // Create new request and store the promise to prevent duplicate fetches
-    pendingRequests[level] = fetch(`/data-vocab/${level}.json`)
+    const basePath = process.env.NEXT_PUBLIC_KANA_DOJO_BASE_PATH ?? '';
+    pendingRequests[level] = fetch(`${basePath}/data-vocab/${level}.json`)
       .then(res => res.json() as Promise<RawVocabEntry[]>)
       .then(data => {
         const words = data.map(toWordObj);

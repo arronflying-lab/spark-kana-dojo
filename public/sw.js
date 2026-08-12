@@ -7,6 +7,8 @@ const API_CACHE_NAME = 'kanadojo-api-v2';
 const STATIC_CACHE_NAME = 'kanadojo-static-v1';
 const AUDIO_METADATA_DB = 'kanadojo-sw-cache-metadata-v1';
 const AUDIO_METADATA_STORE = 'audio-entries';
+const BASE_PATH = new URL('./', self.location.href).pathname.replace(/\/$/, '');
+const withBasePath = function (path) { return BASE_PATH + path; };
 const MAX_AUDIO_CACHE_BYTES = 40 * 1024 * 1024;
 const MAX_API_CACHE_ENTRIES = 100;
 const API_CACHE_TTL_MS = 7 * 24 * 60 * 60 * 1000;
@@ -17,13 +19,13 @@ const OFFLINE_TRANSLATIONS = {
 };
 
 const AUDIO_FILES = [
-  '/sounds/correct.opus',
-  '/sounds/long.opus',
-  '/sounds/error/error1/error1_1.opus',
-  '/sounds/monkeytype-pack/nk-creams/click4_11.opus',
-  '/sounds/monkeytype-pack/nk-creams/click4_22.opus',
-  '/sounds/monkeytype-pack/nk-creams/click4_33.opus',
-  '/sounds/monkeytype-pack/nk-creams/click4_44.opus',
+  withBasePath('/sounds/correct.opus'),
+  withBasePath('/sounds/long.opus'),
+  withBasePath('/sounds/error/error1/error1_1.opus'),
+  withBasePath('/sounds/monkeytype-pack/nk-creams/click4_11.opus'),
+  withBasePath('/sounds/monkeytype-pack/nk-creams/click4_22.opus'),
+  withBasePath('/sounds/monkeytype-pack/nk-creams/click4_33.opus'),
+  withBasePath('/sounds/monkeytype-pack/nk-creams/click4_44.opus'),
 ];
 
 let cacheWriteQueue = Promise.resolve();
@@ -35,7 +37,7 @@ function enqueueCacheWrite(task) {
 
 function getSameOriginAudioUrl(input) {
   const url = new URL(typeof input === 'string' ? input : input.url, self.location.origin);
-  return url.origin === self.location.origin && url.pathname.startsWith('/sounds/') ? url : null;
+  return url.origin === self.location.origin && url.pathname.startsWith(withBasePath('/sounds/')) ? url : null;
 }
 
 function openMetadataDb() {
@@ -127,7 +129,7 @@ async function cacheRequest(category, normalizedBody) {
   const bytes = new TextEncoder().encode(normalizedBody);
   const digest = await crypto.subtle.digest('SHA-256', bytes);
   const hash = Array.from(new Uint8Array(digest)).map(function (byte) { return byte.toString(16).padStart(2, '0'); }).join('');
-  return new Request(new URL('/__kanadojo-offline-cache/' + category + '/' + hash, self.location.origin).href);
+  return new Request(new URL(withBasePath('/__kanadojo-offline-cache/' + category + '/' + hash), self.location.origin).href);
 }
 
 async function pruneApiCache() {
@@ -189,9 +191,9 @@ self.addEventListener('activate', function (event) {
 self.addEventListener('fetch', function (event) {
   const url = new URL(event.request.url);
   if (url.origin !== self.location.origin) return;
-  if (url.pathname === '/api/translate' && event.request.method === 'POST') { event.respondWith(handleTranslationRequest(event.request, event)); return; }
-  if (url.pathname === '/api/analyze-text' && event.request.method === 'POST') { event.respondWith(handleAnalysisRequest(event.request, event)); return; }
-  if (event.request.method === 'GET' && url.pathname.startsWith('/sounds/')) event.respondWith(handleAudioRequest(event.request, event));
+  if (url.pathname === withBasePath('/api/translate') && event.request.method === 'POST') { event.respondWith(handleTranslationRequest(event.request, event)); return; }
+  if (url.pathname === withBasePath('/api/analyze-text') && event.request.method === 'POST') { event.respondWith(handleAnalysisRequest(event.request, event)); return; }
+  if (event.request.method === 'GET' && url.pathname.startsWith(withBasePath('/sounds/'))) event.respondWith(handleAudioRequest(event.request, event));
 });
 
 async function handleAudioRequest(request, event) {

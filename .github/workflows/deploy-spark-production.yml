@@ -56,9 +56,11 @@ jobs:
           set -euo pipefail
           test -f .next/standalone/server.js
           rm -rf release
-          mkdir -p release/.next
+          mkdir -p release/.next/standalone/.next
           cp -a .next/standalone release/.next/standalone
-          cp -a .next/static release/.next/static
+          # Next standalone resolves static files relative to server.js.
+          # Keep them inside the standalone bundle instead of beside it.
+          cp -a .next/static release/.next/standalone/.next/static
           cp -a public release/public
           printf '%s\n' '${{ github.sha }}' > release/RELEASE_SHA
           tar -czf kana-dojo-runtime.tgz -C release .
@@ -143,7 +145,7 @@ jobs:
           rm -rf "$BACKUP_DIR"
           mkdir -p "$BACKUP_DIR"
           if [ -d "$APP_DIR/.next/standalone" ]; then cp -a "$APP_DIR/.next/standalone" "$BACKUP_DIR/standalone"; fi
-          if [ -d "$APP_DIR/.next/static" ]; then cp -a "$APP_DIR/.next/static" "$BACKUP_DIR/static"; fi
+          if [ -d "$APP_DIR/.next/standalone/.next/static" ]; then cp -a "$APP_DIR/.next/standalone/.next/static" "$BACKUP_DIR/static"; fi
           if [ -d "$APP_DIR/public" ]; then cp -a "$APP_DIR/public" "$BACKUP_DIR/public"; fi
           mkdir -p "$APP_DIR/.next"
           tar -xzf "$ARCHIVE" -C "$APP_DIR"
@@ -155,7 +157,7 @@ jobs:
             echo "::warning::health check failed; restoring previous runtime"
             rm -rf "$APP_DIR/.next/standalone" "$APP_DIR/.next/static" "$APP_DIR/public"
             [ -d "$BACKUP_DIR/standalone" ] && cp -a "$BACKUP_DIR/standalone" "$APP_DIR/.next/standalone" || true
-            [ -d "$BACKUP_DIR/static" ] && cp -a "$BACKUP_DIR/static" "$APP_DIR/.next/static" || true
+            [ -d "$BACKUP_DIR/static" ] && mkdir -p "$APP_DIR/.next/standalone/.next" && cp -a "$BACKUP_DIR/static" "$APP_DIR/.next/standalone/.next/static" || true
             [ -d "$BACKUP_DIR/public" ] && cp -a "$BACKUP_DIR/public" "$APP_DIR/public" || true
             pm2 restart "$PM2_APP" --update-env || true
           }
