@@ -1,0 +1,175 @@
+name: Deploy Spark adapter (Shanghai)
+
+# Build on a hosted runner. The Shanghai Lighthouse instance is a 4 GB
+# production runtime and must never compile this application in place.
+on:
+  workflow_dispatch:
+    inputs:
+      deploy_ref:
+        description: "Branch or tag to deploy"
+        required: true
+        default: main
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: deploy-spark-kana-dojo-shanghai
+  cancel-in-progress: false
+
+env:
+  BASE_PATH: /kanadojo
+  NODE_VERSION: "24"
+
+jobs:
+  build:
+    name: Build release artifact on hosted runner
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Checkout adapter
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.deploy_ref || 'main' }}
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci --ignore-scripts --no-audit --no-fund
+
+      - name: Build with production base path
+        env:
+          KANA_DOJO_BASE_PATH: /kanadojo
+          NEXT_PUBLIC_KANA_DOJO_BASE_PATH: /kanadojo
+          NEXT_PUBLIC_SUPABASE_URL: https://build.invalid
+          SUPABASE_SERVICE_ROLE_KEY: build-placeholder
+          NODE_OPTIONS: --max-old-space-size=4096
+        run: npm run build
+
+      - name: Package runtime artifact
+        run: |
+          set -euo pipefail
+          test -f .next/standalone/server.js
+          rm -rf release
+          mkdir -p release/.next
+          cp -a .next/standalone release/.next/standalone
+          cp -a .next/static release/.next/static
+          cp -a public release/public
+          printf '%s\n' '${{ github.sha }}' > release/RELEASE_SHA
+          tar -czf kana-dojo-runtime.tgz -C release .
+
+      - name: Upload runtime artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: kana-dojo-runtime-${{ github.sha }}
+          path: kana-dojo-runtime.tgz
+          retention-days: 7
+          if-no-files-found: error
+
+  deploy:
+    name: Install runtime artifact on Shanghai
+    needs: build
+    runs-on: [self-hosted, linux, shanghai-kana-dojo]
+    timeout-minutes: 15
+    environment:
+      name: production
+      url: https://eju.japanedupath.com/kanadojo/spark
+    env:
+      APP_DIR: /var/www/spark-kana-dojo
+      MAIN_APP_DIR: /var/www/japanedupath-internal
+      PM2_APP: spark-kana-dojo
+      BRANCH: ${{ inputs.deploy_ref || 'main' }}
+      REPO_URL: https://github.com/arronflying-lab/spark-kana-dojo.git
+      RUNTIME_ENV: /var/www/spark-kana-dojo/.env.production
+      HEALTH_URL: http://127.0.0.1:3102/kanadojo/api/healthcheck
+      PAGE_URL: http://127.0.0.1:3102/kanadojo/spark
+    steps:
+      - name: Download runtime artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: kana-dojo-runtime-${{ github.sha }}
+          path: ${{ runner.temp }}/kana-dojo-runtime
+
+      - name: Prepare checkout and runtime environment
+        run: |
+          set -euo pipefail
+          if [ -d "$APP_DIR/.git" ]; then
+            REMOTE="$(git -C "$APP_DIR" remote get-url origin 2>/dev/null || true)"
+            test "$REMOTE" = "$REPO_URL" \
+              || { echo "::error::unexpected adapter remote: $REMOTE"; exit 1; }
+          elif [ ! -e "$APP_DIR" ]; then
+            git -c credential.helper=store clone --branch "$BRANCH" --single-branch "$REPO_URL" "$APP_DIR"
+          else
+            echo "::error::$APP_DIR exists but is not a git checkout"
+            exit 1
+          fi
+          git -C "$APP_DIR" -c credential.helper=store fetch --prune origin "$BRANCH"
+          git -C "$APP_DIR" checkout -B "$BRANCH" "origin/$BRANCH"
+
+          MAIN_ENV="$MAIN_APP_DIR/.env.production"
+          [ -s "$MAIN_ENV" ] || { echo "::error::$MAIN_ENV is missing"; exit 1; }
+          if ! grep -q '^SPARK_KANA_DOJO_HANDOFF_SECRET=' "$MAIN_ENV"; then
+            umask 077
+            printf '\nSPARK_KANA_DOJO_PATH=/kanadojo/spark\nSPARK_KANA_DOJO_HANDOFF_SECRET=%s\n' \
+              "$(openssl rand -hex 32)" >> "$MAIN_ENV"
+            chmod 600 "$MAIN_ENV"
+          fi
+          SUPABASE_URL_LINE="$(grep '^NEXT_PUBLIC_SUPABASE_URL=' "$MAIN_ENV" | tail -n 1)"
+          SERVICE_KEY_LINE="$(grep '^SUPABASE_SERVICE_ROLE_KEY=' "$MAIN_ENV" | tail -n 1)"
+          SECRET_LINE="$(grep '^SPARK_KANA_DOJO_HANDOFF_SECRET=' "$MAIN_ENV" | tail -n 1)"
+          test -n "$SUPABASE_URL_LINE" && test -n "$SERVICE_KEY_LINE" && test -n "$SECRET_LINE"
+          umask 077
+          TMP_ENV="$(mktemp "$APP_DIR/.env.production.XXXXXX")"
+          {
+            printf '%s\n' "$SUPABASE_URL_LINE" "$SERVICE_KEY_LINE" "$SECRET_LINE"
+            printf '%s\n' 'KANA_DOJO_BASE_PATH=/kanadojo' 'NEXT_PUBLIC_KANA_DOJO_BASE_PATH=/kanadojo' 'PORT=3102' 'HOSTNAME=127.0.0.1'
+          } > "$TMP_ENV"
+          mv "$TMP_ENV" "$RUNTIME_ENV"
+          chmod 600 "$RUNTIME_ENV"
+
+      - name: Install artifact with rollback
+        run: |
+          set -euo pipefail
+          ARCHIVE="$(find "$RUNNER_TEMP/kana-dojo-runtime" -maxdepth 1 -name 'kana-dojo-runtime.tgz' -print -quit)"
+          test -n "$ARCHIVE"
+          PREV_SHA="$(git -C "$APP_DIR" rev-parse HEAD 2>/dev/null || true)"
+          BACKUP_DIR="$APP_DIR/.kana-dojo-previous"
+          rm -rf "$BACKUP_DIR"
+          mkdir -p "$BACKUP_DIR"
+          if [ -d "$APP_DIR/.next/standalone" ]; then cp -a "$APP_DIR/.next/standalone" "$BACKUP_DIR/standalone"; fi
+          if [ -d "$APP_DIR/.next/static" ]; then cp -a "$APP_DIR/.next/static" "$BACKUP_DIR/static"; fi
+          if [ -d "$APP_DIR/public" ]; then cp -a "$APP_DIR/public" "$BACKUP_DIR/public"; fi
+          mkdir -p "$APP_DIR/.next"
+          tar -xzf "$ARCHIVE" -C "$APP_DIR"
+
+          set -a
+          . "$RUNTIME_ENV"
+          set +a
+          rollback() {
+            echo "::warning::health check failed; restoring previous runtime"
+            rm -rf "$APP_DIR/.next/standalone" "$APP_DIR/.next/static" "$APP_DIR/public"
+            [ -d "$BACKUP_DIR/standalone" ] && cp -a "$BACKUP_DIR/standalone" "$APP_DIR/.next/standalone" || true
+            [ -d "$BACKUP_DIR/static" ] && cp -a "$BACKUP_DIR/static" "$APP_DIR/.next/static" || true
+            [ -d "$BACKUP_DIR/public" ] && cp -a "$BACKUP_DIR/public" "$APP_DIR/public" || true
+            pm2 restart "$PM2_APP" --update-env || true
+          }
+          trap rollback ERR
+          if pm2 describe "$PM2_APP" >/dev/null 2>&1; then
+            pm2 restart "$PM2_APP" --update-env
+          else
+            pm2 start .next/standalone/server.js --name "$PM2_APP" --cwd "$APP_DIR"
+          fi
+          pm2 save
+          for i in 1 2 3 4 5 6; do
+            if curl -fsS --max-time 10 "$HEALTH_URL" >/tmp/kana-dojo-health.json; then break; fi
+            [ "$i" = 6 ] || sleep 2
+          done
+          test "$(cat /tmp/kana-dojo-health.json)" = '{"status":"ok"}'
+          test "$(curl -fsS --max-time 10 -o /dev/null -w '%{http_code}' "$PAGE_URL")" = 200
+          trap - ERR
+          echo "KanaDojo runtime is healthy at $(cat "$APP_DIR/RELEASE_SHA")"
