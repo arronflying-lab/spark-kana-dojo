@@ -2,7 +2,6 @@ import createMiddleware from 'next-intl/middleware';
 import { NextRequest, NextResponse } from 'next/server';
 import { routing } from './core/i18n/routing';
 import {
-  getCanonicalNoPrefixPath,
   hasLocalePrefix,
   isTranslatorPath,
 } from './shared/utils/translator-routing';
@@ -17,6 +16,7 @@ const translatorMiddleware = createMiddleware({
 
 export default function proxy(request: NextRequest) {
   const { pathname } = request.nextUrl;
+  const routePathname = pathname.replace(/^\/kanadojo(?=\/|$)/, '') || '/';
 
   // Fast path - skip for paths that don't need locale handling
   if (
@@ -30,10 +30,11 @@ export default function proxy(request: NextRequest) {
     return NextResponse.next();
   }
 
-  if (hasLocalePrefix(pathname)) {
-    const redirectUrl = request.nextUrl.clone();
-    redirectUrl.pathname = getCanonicalNoPrefixPath(pathname);
-    return NextResponse.redirect(redirectUrl, 308);
+  // next-intl internally rewrites localePrefix: never routes to /kanadojo/en/*
+  // (or /kanadojo/es/*). Let that internal route reach the App Router instead
+  // of running locale negotiation a second time and creating a redirect loop.
+  if (hasLocalePrefix(routePathname)) {
+    return NextResponse.next();
   }
 
   if (isTranslatorPath(pathname)) {

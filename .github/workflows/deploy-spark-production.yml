@@ -86,6 +86,7 @@ jobs:
       BRANCH: ${{ inputs.deploy_ref || 'main' }}
       REPO_URL: https://github.com/arronflying-lab/spark-kana-dojo.git
       RUNTIME_ENV: /var/www/spark-kana-dojo/.env.production
+      # The standalone build is compiled with /kanadojo as its basePath.
       HEALTH_URL: http://127.0.0.1:3102/kanadojo/api/healthcheck
       PAGE_URL: http://127.0.0.1:3102/kanadojo/spark
     steps:
