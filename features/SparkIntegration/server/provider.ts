@@ -14,8 +14,10 @@ import type {
   SparkLearningDataProvider,
   SparkVocabularyRecord,
 } from '../types';
+import { verifySparkKanaDojoSession } from './handoff';
 
 export const SPARK_SESSION_COOKIE = 'spark_session';
+export const SPARK_KANA_DOJO_SESSION_COOKIE = 'spark_kana_dojo_session';
 
 const VOCAB_COLUMNS =
   'slug,headword,reading,pos,meaning_zh,jlpt_level,updated_at';
@@ -106,10 +108,16 @@ export function verifySparkSessionToken(token: string): string | null {
 
 async function resolveSparkAccountId(): Promise<string | null> {
   const cookieStore = await cookies();
-  const token = cookieStore.get(SPARK_SESSION_COOKIE)?.value;
-  if (!token) return null;
-
-  const accountId = verifySparkSessionToken(token);
+  const sparkToken = cookieStore.get(SPARK_SESSION_COOKIE)?.value;
+  const kanaDojoToken = cookieStore.get(SPARK_KANA_DOJO_SESSION_COOKIE)?.value;
+  let accountId = sparkToken ? verifySparkSessionToken(sparkToken) : null;
+  if (!accountId && kanaDojoToken) {
+    try {
+      accountId = verifySparkKanaDojoSession(kanaDojoToken);
+    } catch {
+      accountId = null;
+    }
+  }
   if (!accountId) return null;
 
   const { data, error } = await getAdminClient()

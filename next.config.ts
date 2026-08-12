@@ -9,6 +9,10 @@ const withBundleAnalyzer = bundleAnalyzer({
 });
 
 const isDev = process.env.NODE_ENV !== 'production';
+const kanaDojoBasePath =
+  process.env.KANA_DOJO_BASE_PATH?.trim() ||
+  process.env.NEXT_PUBLIC_KANA_DOJO_BASE_PATH?.trim() ||
+  '';
 
 const posthogHost = process.env.NEXT_PUBLIC_POSTHOG_HOST;
 const posthogServerHost =
@@ -47,6 +51,7 @@ const cspReportOnly = [
 ].join('; ');
 
 const nextConfig: NextConfig = {
+  ...(kanaDojoBasePath ? { basePath: kanaDojoBasePath } : {}),
   // Automatically memoize eligible React components and hooks.
   reactCompiler: true,
 

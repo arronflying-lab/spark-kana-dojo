@@ -44,6 +44,13 @@ export async function generateMetadata(): Promise<Metadata> {
 export default function CreditsPage() {
   const dataSources = [
     {
+      name: 'KanaDojo source code',
+      description:
+        'This deployed learning application is based on the lingdojo/kana-dojo open-source repository. The source, license, and this downstream revision are available for inspection.',
+      url: 'https://github.com/lingdojo/kana-dojo/tree/5b034742a6d794f6a443b35e87c54d8370e536fc',
+      license: 'GNU Affero General Public License v3.0 or later',
+    },
+    {
       name: 'JMdict',
       description:
         'Japanese-English dictionary database maintained by the Electronic Dictionary Research and Development Group. Powers our translation features.',
@@ -227,8 +234,9 @@ export default function CreditsPage() {
             respective licenses (MIT, Apache 2.0, etc.).
           </li>
           <li>
-            KanaDojo&apos;s original code and content are created by the
-            development team and released under our own license terms.
+            The KanaDojo application source used here is available under the
+            GNU Affero General Public License v3.0 or later. See the linked
+            repository and the included source offer for the exact revision.
           </li>
         </ul>
         <p className='mt-4'>

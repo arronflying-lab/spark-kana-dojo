@@ -18,10 +18,14 @@ async function getSparkLearning<T>(
     level,
     limit: String(limit),
   });
-  const response = await fetch(`/api/spark-learning?${params.toString()}`, {
-    credentials: 'include',
-    cache: 'no-store',
-  });
+  const basePath = process.env.NEXT_PUBLIC_KANA_DOJO_BASE_PATH ?? '';
+  const response = await fetch(
+    `${basePath}/api/spark-learning?${params.toString()}`,
+    {
+      credentials: 'include',
+      cache: 'no-store',
+    },
+  );
   if (!response.ok) {
     throw new Error(`Spark learning request failed: ${response.status}`);
   }
