@@ -7,21 +7,32 @@ import SparkVocabularyGame from './SparkVocabularyGame';
 
 type LearningMode = 'vocabulary' | 'grammar';
 
-type SparkLearningHubProps = {
-  handoff?: string | null;
-};
-
 const LEVELS: VocabLevel[] = ['n5', 'n4', 'n3', 'n2', 'n1'];
 
-export default function SparkLearningHub({ handoff }: SparkLearningHubProps) {
+function readHandoffFromHash(): string | null {
+  const prefix = '#spark-handoff=';
+  if (!window.location.hash.startsWith(prefix)) return null;
+  const encoded = window.location.hash.slice(prefix.length);
+  if (!encoded || encoded.length > 4096) return null;
+  try {
+    return decodeURIComponent(encoded);
+  } catch {
+    return null;
+  }
+}
+
+export default function SparkLearningHub() {
   const [mode, setMode] = useState<LearningMode>('vocabulary');
   const [level, setLevel] = useState<VocabLevel>('n5');
-  const [authState, setAuthState] = useState<
-    'loading' | 'ready' | 'error'
-  >(handoff ? 'loading' : 'ready');
+  const [authState, setAuthState] = useState<'loading' | 'ready' | 'error'>('loading');
 
   useEffect(() => {
-    if (!handoff) return;
+    const handoff = readHandoffFromHash();
+    if (!handoff) {
+      setAuthState('ready');
+      return;
+    }
+
     let cancelled = false;
     void fetch(
       `${process.env.NEXT_PUBLIC_KANA_DOJO_BASE_PATH ?? ''}/api/spark-session/handoff`,
@@ -35,7 +46,11 @@ export default function SparkLearningHub({ handoff }: SparkLearningHubProps) {
       .then(response => {
         if (!response.ok) throw new Error('handoff failed');
         if (cancelled) return;
-        window.history.replaceState({}, '', window.location.pathname);
+        window.history.replaceState(
+          {},
+          '',
+          `${window.location.pathname}${window.location.search}`,
+        );
         setAuthState('ready');
       })
       .catch(() => {
@@ -44,7 +59,7 @@ export default function SparkLearningHub({ handoff }: SparkLearningHubProps) {
     return () => {
       cancelled = true;
     };
-  }, [handoff]);
+  }, []);
 
   if (authState === 'loading') {
     return (

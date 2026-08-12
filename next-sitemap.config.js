@@ -98,6 +98,8 @@ const sitemapConfig = {
     '/es/*',
     '/tools/*',
     '/*/train/*',
+    '/spark',
+    '/spark/*',
   ],
   robotsTxtOptions: {
     policies: [

@@ -13,11 +13,6 @@ export const metadata: Metadata = {
   robots: { index: false, follow: false },
 };
 
-export default async function SparkLearningPage({
-  searchParams,
-}: {
-  searchParams: Promise<{ handoff?: string }>;
-}) {
-  const params = await searchParams;
-  return <SparkLearningHub handoff={params.handoff ?? null} />;
+export default function SparkLearningPage() {
+  return <SparkLearningHub />;
 }

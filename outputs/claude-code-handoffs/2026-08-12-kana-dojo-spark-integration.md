@@ -18,6 +18,8 @@
 - 新增服务端 provider：验证既有 `spark_session`，或验证门户交接后产生的 HttpOnly `spark_kana_dojo_session`，再按账号读取数据。
 - 新增只读 API：`/api/spark-learning?kind=vocabulary|grammar&level=n5..n1&limit=...`。
 - 新增 HMAC 交接 API：门户短时令牌只在服务端验证后换成下游 HttpOnly 会话。
+- 交接令牌放在 URL fragment 中，由页面加载后读取并立即清除，不通过查询字符串发送给服务器。
+- 下游 `vercel.json` 和 Next headers 统一为 `X-Frame-Options: SAMEORIGIN`，允许星火同源 iframe 挂载，仍拒绝跨站嵌入。
 - 支持 `KANA_DOJO_BASE_PATH` 和 `NEXT_PUBLIC_KANA_DOJO_BASE_PATH` 的同源挂载。
 
 ## 数据边界
