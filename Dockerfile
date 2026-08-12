@@ -15,6 +15,14 @@ WORKDIR /app
 COPY --from=deps /app/node_modules ./node_modules
 COPY . .
 
+# basePath is a build-time Next.js setting. The production mount keeps the
+# prefix on the request path, so the container must be built with the same
+# prefix that Nginx exposes.
+ARG KANA_DOJO_BASE_PATH=/kanadojo
+ARG NEXT_PUBLIC_KANA_DOJO_BASE_PATH=/kanadojo
+ENV KANA_DOJO_BASE_PATH=${KANA_DOJO_BASE_PATH}
+ENV NEXT_PUBLIC_KANA_DOJO_BASE_PATH=${NEXT_PUBLIC_KANA_DOJO_BASE_PATH}
+
 # Generate static assets and types
 RUN npm run i18n:check
 RUN npm run build

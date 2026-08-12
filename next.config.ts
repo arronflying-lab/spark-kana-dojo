@@ -52,6 +52,10 @@ const cspReportOnly = [
 
 const nextConfig: NextConfig = {
   ...(kanaDojoBasePath ? { basePath: kanaDojoBasePath } : {}),
+  // The Shanghai same-server deployment runs KanaDojo as an isolated service.
+  // Keep the upstream app structure, but emit the self-contained server bundle
+  // expected by the checked-in Dockerfile.
+  output: 'standalone',
   // Automatically memoize eligible React components and hooks.
   reactCompiler: true,
 
