@@ -1,159 +1,20 @@
 name: Deploy Spark adapter (Shanghai)
 
-# The Shanghai runner has consistently stalled while downloading the 136 MB
-# GitHub Actions artifact. Build in the runner's disposable work directory
-# instead, then install only the standalone runtime into the production path.
+# Safety interlock: the previous workflow built Next.js on the 4 GB production
+# host and exhausted it. Deployment is disabled until the release artifact
+# transfer is redesigned and verified without a server-side build.
 on:
   workflow_dispatch:
-    inputs:
-      deploy_ref:
-        description: "Branch or tag to deploy"
-        required: true
-        default: main
-        type: string
 
 permissions:
   contents: read
 
-concurrency:
-  group: deploy-spark-kana-dojo-shanghai
-  cancel-in-progress: false
-
-env:
-  BASE_PATH: /kanadojo
-  NODE_VERSION: "24"
-
 jobs:
-  deploy:
-    name: Build isolated runtime and install on Shanghai
-    runs-on: [self-hosted, linux, shanghai-kana-dojo]
-    timeout-minutes: 35
-    environment:
-      name: production
-      url: https://eju.japanedupath.com/kanadojo/spark
-    env:
-      APP_DIR: /var/www/spark-kana-dojo
-      MAIN_APP_DIR: /var/www/japanedupath-internal
-      PM2_APP: spark-kana-dojo
-      RUNTIME_ENV: /var/www/spark-kana-dojo/.env.production
-      HEALTH_URL: http://127.0.0.1:3102/kanadojo/api/healthcheck
-      PAGE_URL: http://127.0.0.1:3102/kanadojo/spark
+  deployment-interlocked:
+    name: Deployment intentionally interlocked
+    runs-on: ubuntu-latest
     steps:
-      - name: Checkout adapter source into runner workspace
-        uses: actions/checkout@v4
-        with:
-          ref: ${{ inputs.deploy_ref || 'main' }}
-
-      - name: Verify runner toolchain
-        run: |
-          set -euo pipefail
-          command -v node npm pm2 curl tar >/dev/null
-          test "$(node -p 'process.versions.node.split(".")[0]')" = "$NODE_VERSION"
-
-      - name: Install build dependencies in disposable workspace
-        run: npm ci --ignore-scripts --no-audit --no-fund
-
-      - name: Build standalone runtime outside production directory
-        env:
-          KANA_DOJO_BASE_PATH: /kanadojo
-          NEXT_PUBLIC_KANA_DOJO_BASE_PATH: /kanadojo
-          NEXT_PUBLIC_SUPABASE_URL: https://build.invalid
-          SUPABASE_SERVICE_ROLE_KEY: build-placeholder
-          ANALYTICS_DISABLED: 'true'
-          NEXT_PUBLIC_SENTRY_DISABLED: 'true'
-          SENTRY_DISABLED: 'true'
-          NODE_OPTIONS: --max-old-space-size=2048
-        run: |
-          set -euo pipefail
-          npm run clean
-          npm run build
-          test -f .next/standalone/server.js
-
-      - name: Package local runtime archive
-        run: |
-          set -euo pipefail
-          RUNTIME_ARCHIVE="$RUNNER_TEMP/kana-dojo-runtime.tgz"
-          rm -rf release "$RUNTIME_ARCHIVE"
-          mkdir -p release/.next/standalone/.next
-          cp -a .next/standalone/. release/.next/standalone/
-          cp -a public release/.next/standalone/public
-          cp -a .next/static release/.next/standalone/.next/static
-          git rev-parse HEAD > release/RELEASE_SHA
-          tar -czf "$RUNTIME_ARCHIVE" -C release .
-          test -s "$RUNTIME_ARCHIVE"
-
-      - name: Prepare runtime environment
-        run: |
-          set -euo pipefail
-          if [ -e "$APP_DIR" ] && [ ! -d "$APP_DIR" ]; then
-            echo "::error::$APP_DIR exists but is not a directory"
-            exit 1
-          fi
-          mkdir -p "$APP_DIR"
-
-          MAIN_ENV="$MAIN_APP_DIR/.env.production"
-          [ -s "$MAIN_ENV" ] || { echo "::error::$MAIN_ENV is missing"; exit 1; }
-          if ! grep -q '^SPARK_KANA_DOJO_HANDOFF_SECRET=' "$MAIN_ENV"; then
-            umask 077
-            printf '\nSPARK_KANA_DOJO_PATH=/kanadojo/spark\nSPARK_KANA_DOJO_HANDOFF_SECRET=%s\n' \
-              "$(openssl rand -hex 32)" >> "$MAIN_ENV"
-            chmod 600 "$MAIN_ENV"
-          fi
-          SUPABASE_URL_LINE="$(grep '^NEXT_PUBLIC_SUPABASE_URL=' "$MAIN_ENV" | tail -n 1)"
-          SERVICE_KEY_LINE="$(grep '^SUPABASE_SERVICE_ROLE_KEY=' "$MAIN_ENV" | tail -n 1)"
-          SECRET_LINE="$(grep '^SPARK_KANA_DOJO_HANDOFF_SECRET=' "$MAIN_ENV" | tail -n 1)"
-          test -n "$SUPABASE_URL_LINE" && test -n "$SERVICE_KEY_LINE" && test -n "$SECRET_LINE"
-          umask 077
-          TMP_ENV="$(mktemp "$APP_DIR/.env.production.XXXXXX")"
-          {
-            printf '%s\n' "$SUPABASE_URL_LINE" "$SERVICE_KEY_LINE" "$SECRET_LINE"
-            printf '%s\n' 'KANA_DOJO_BASE_PATH=/kanadojo' 'NEXT_PUBLIC_KANA_DOJO_BASE_PATH=/kanadojo' 'ANALYTICS_DISABLED=true' 'SENTRY_DISABLED=true' 'PORT=3102' 'HOSTNAME=127.0.0.1'
-          } > "$TMP_ENV"
-          mv "$TMP_ENV" "$RUNTIME_ENV"
-          chmod 600 "$RUNTIME_ENV"
-
-      - name: Install runtime with rollback and health checks
-        run: |
-          set -euo pipefail
-          RUNTIME_ARCHIVE="$RUNNER_TEMP/kana-dojo-runtime.tgz"
-          test -s "$RUNTIME_ARCHIVE"
-          BACKUP_DIR="$APP_DIR/.kana-dojo-previous"
-          test "$BACKUP_DIR" = "/var/www/spark-kana-dojo/.kana-dojo-previous"
-          rm -rf "$BACKUP_DIR"
-          mkdir -p "$BACKUP_DIR"
-          if [ -d "$APP_DIR/.next/standalone" ]; then
-            cp -a "$APP_DIR/.next/standalone" "$BACKUP_DIR/standalone"
-          fi
-          if [ -f "$APP_DIR/RELEASE_SHA" ]; then
-            cp -a "$APP_DIR/RELEASE_SHA" "$BACKUP_DIR/RELEASE_SHA"
-          fi
-
-          set -a
-          . "$RUNTIME_ENV"
-          set +a
-          rollback() {
-            echo "::warning::health check failed; restoring previous runtime"
-            rm -rf "$APP_DIR/.next/standalone"
-            [ -d "$BACKUP_DIR/standalone" ] && cp -a "$BACKUP_DIR/standalone" "$APP_DIR/.next/standalone" || true
-            [ -f "$BACKUP_DIR/RELEASE_SHA" ] && cp -a "$BACKUP_DIR/RELEASE_SHA" "$APP_DIR/RELEASE_SHA" || true
-            pm2 restart "$PM2_APP" --update-env || true
-          }
-          trap rollback ERR
-          rm -rf "$APP_DIR/.next/standalone"
-          mkdir -p "$APP_DIR/.next"
-          tar -xzf "$RUNTIME_ARCHIVE" -C "$APP_DIR"
-
-          if pm2 describe "$PM2_APP" >/dev/null 2>&1; then
-            pm2 restart "$PM2_APP" --update-env
-          else
-            pm2 start .next/standalone/server.js --name "$PM2_APP" --cwd "$APP_DIR"
-          fi
-          pm2 save
-          for i in 1 2 3 4 5 6; do
-            if curl -fsS --max-time 10 "$HEALTH_URL" >/tmp/kana-dojo-health.json; then break; fi
-            [ "$i" = 6 ] || sleep 2
-          done
-          test "$(cat /tmp/kana-dojo-health.json)" = '{"status":"ok"}'
-          test "$(curl -fsS --max-time 10 -o /dev/null -w '%{http_code}' "$PAGE_URL")" = 200
-          trap - ERR
-          echo "KanaDojo runtime is healthy at $(cat "$APP_DIR/RELEASE_SHA")"
+      - run: |
+          echo "::error::Deployment is interlocked: do not build KanaDojo on the Shanghai production host."
+          echo "::error::Use a verified hosted-build artifact workflow before removing this interlock."
+          exit 1
