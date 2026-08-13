@@ -46,6 +46,10 @@ jobs:
         run: |
           set -euo pipefail
           npm ci --ignore-scripts --no-audit --no-fund
+          # `commitInfo.json` is deliberately generated and gitignored.  Create
+          # it before typechecking so a clean hosted checkout follows the same
+          # contract as `npm run build` and local development.
+          node scripts/generate-commit-info.mjs
           npx tsc --noEmit --pretty false --incremental
           npm test -- --run features/SparkIntegration/__tests__/mappers.test.ts features/SparkIntegration/__tests__/portalVocabQuest.test.ts
           npm exec eslint features/SparkIntegration app/[locale]/vocabulary/spark/page.tsx -- --max-warnings=0
