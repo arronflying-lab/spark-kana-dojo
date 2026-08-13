@@ -57,7 +57,9 @@ jobs:
           test -f .next/standalone/server.js
           rm -rf release
           mkdir -p release/.next/standalone/.next
-          cp -a .next/standalone release/.next/standalone
+          # Copy the bundle contents. Copying the directory itself would create
+          # release/.next/standalone/standalone and break server.js resolution.
+          cp -a .next/standalone/. release/.next/standalone/
           # Next standalone resolves static files relative to server.js.
           # Keep them inside the standalone bundle instead of beside it.
           cp -a .next/static release/.next/standalone/.next/static
@@ -147,6 +149,7 @@ jobs:
           if [ -d "$APP_DIR/.next/standalone" ]; then cp -a "$APP_DIR/.next/standalone" "$BACKUP_DIR/standalone"; fi
           if [ -d "$APP_DIR/.next/standalone/.next/static" ]; then cp -a "$APP_DIR/.next/standalone/.next/static" "$BACKUP_DIR/static"; fi
           if [ -d "$APP_DIR/public" ]; then cp -a "$APP_DIR/public" "$BACKUP_DIR/public"; fi
+          if [ -f "$APP_DIR/RELEASE_SHA" ]; then cp -a "$APP_DIR/RELEASE_SHA" "$BACKUP_DIR/RELEASE_SHA"; fi
           mkdir -p "$APP_DIR/.next"
           tar -xzf "$ARCHIVE" -C "$APP_DIR"
 
@@ -159,6 +162,7 @@ jobs:
             [ -d "$BACKUP_DIR/standalone" ] && cp -a "$BACKUP_DIR/standalone" "$APP_DIR/.next/standalone" || true
             [ -d "$BACKUP_DIR/static" ] && mkdir -p "$APP_DIR/.next/standalone/.next" && cp -a "$BACKUP_DIR/static" "$APP_DIR/.next/standalone/.next/static" || true
             [ -d "$BACKUP_DIR/public" ] && cp -a "$BACKUP_DIR/public" "$APP_DIR/public" || true
+            [ -f "$BACKUP_DIR/RELEASE_SHA" ] && cp -a "$BACKUP_DIR/RELEASE_SHA" "$APP_DIR/RELEASE_SHA" || true
             pm2 restart "$PM2_APP" --update-env || true
           }
           trap rollback ERR
