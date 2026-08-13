@@ -1,10 +1,12 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { VocabularyGame, useVocabSelection } from '@/features/Vocabulary';
+import type { IVocabObj } from '@/entities/vocabulary';
+import { useVocabSelection } from '@/features/Vocabulary';
 import type { VocabLevel } from '@/entities/vocabulary';
 import { getSparkVocabulary } from '../client';
 import { toKanaDojoVocabulary } from '../types';
+import SparkVocabularyChallenge from './SparkVocabularyChallenge';
 
 type LoadState =
   | { status: 'loading'; requestKey: string }
@@ -27,6 +29,7 @@ export default function SparkVocabularyGame({
     status: 'loading',
     requestKey,
   });
+  const [vocabulary, setVocabulary] = useState<IVocabObj[]>([]);
 
   useEffect(() => {
     let cancelled = false;
@@ -45,7 +48,9 @@ export default function SparkVocabularyGame({
           return;
         }
 
-        replaceVocab(records.map(toKanaDojoVocabulary));
+        const mappedVocabulary = records.map(toKanaDojoVocabulary);
+        replaceVocab(mappedVocabulary);
+        setVocabulary(mappedVocabulary);
         setCollection(level);
         setSets([`Spark ${level.toUpperCase()}`]);
         setGameMode('Pick');
@@ -63,6 +68,7 @@ export default function SparkVocabularyGame({
     return () => {
       cancelled = true;
       clearVocab();
+      setVocabulary([]);
     };
   }, [
     clearVocab,
@@ -99,5 +105,5 @@ export default function SparkVocabularyGame({
     );
   }
 
-  return <VocabularyGame />;
+  return <SparkVocabularyChallenge vocabulary={vocabulary} />;
 }

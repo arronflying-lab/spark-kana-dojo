@@ -1,7 +1,8 @@
 name: Deploy Spark adapter (Shanghai)
 
-# Build on a hosted runner. The Shanghai Lighthouse instance is a 4 GB
-# production runtime and must never compile this application in place.
+# The Shanghai runner has consistently stalled while downloading the 136 MB
+# GitHub Actions artifact. Build in the runner's disposable work directory
+# instead, then install only the standalone runtime into the production path.
 on:
   workflow_dispatch:
     inputs:
@@ -23,69 +24,9 @@ env:
   NODE_VERSION: "24"
 
 jobs:
-  build:
-    name: Build release artifact on hosted runner
-    runs-on: ubuntu-latest
-    timeout-minutes: 20
-    steps:
-      - name: Checkout adapter
-        uses: actions/checkout@v4
-        with:
-          ref: ${{ inputs.deploy_ref || 'main' }}
-
-      - name: Set up Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: ${{ env.NODE_VERSION }}
-          cache: npm
-
-      - name: Install dependencies
-        run: npm ci --ignore-scripts --no-audit --no-fund
-
-      - name: Build with production base path
-        env:
-          KANA_DOJO_BASE_PATH: /kanadojo
-          NEXT_PUBLIC_KANA_DOJO_BASE_PATH: /kanadojo
-          NEXT_PUBLIC_SUPABASE_URL: https://build.invalid
-          SUPABASE_SERVICE_ROLE_KEY: build-placeholder
-          ANALYTICS_DISABLED: 'true'
-          NEXT_PUBLIC_SENTRY_DISABLED: 'true'
-          SENTRY_DISABLED: 'true'
-          NODE_OPTIONS: --max-old-space-size=4096
-        run: npm run clean && npm run build
-
-      - name: Package runtime artifact
-        run: |
-          set -euo pipefail
-          test -f .next/standalone/server.js
-          rm -rf release
-          mkdir -p release/.next/standalone/.next
-          # Copy the bundle contents. Copying the directory itself would create
-          # release/.next/standalone/standalone and break server.js resolution.
-          cp -a .next/standalone/. release/.next/standalone/
-          # Next standalone resolves public files relative to server.js.
-          # Keep both public assets and static chunks inside the standalone
-          # bundle; placing public beside it makes /data-* return 404.
-          cp -a public release/.next/standalone/public
-          cp -a .next/static release/.next/standalone/.next/static
-          printf '%s\n' '${{ github.sha }}' > release/RELEASE_SHA
-          tar -czf kana-dojo-runtime.tgz -C release .
-
-      - name: Upload runtime artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: kana-dojo-runtime-${{ github.sha }}
-          path: kana-dojo-runtime.tgz
-          retention-days: 7
-          if-no-files-found: error
-
   deploy:
-    name: Install runtime artifact on Shanghai
-    needs: build
+    name: Build isolated runtime and install on Shanghai
     runs-on: [self-hosted, linux, shanghai-kana-dojo]
-    # The runtime archive is roughly 135 MB. On the Shanghai runner the
-    # artifact transfer alone can exceed 15 minutes, before installation and
-    # the rollback-protected health checks even start.
     timeout-minutes: 35
     environment:
       name: production
@@ -94,25 +35,56 @@ jobs:
       APP_DIR: /var/www/spark-kana-dojo
       MAIN_APP_DIR: /var/www/japanedupath-internal
       PM2_APP: spark-kana-dojo
-      BRANCH: ${{ inputs.deploy_ref || 'main' }}
-      REPO_URL: https://github.com/arronflying-lab/spark-kana-dojo.git
       RUNTIME_ENV: /var/www/spark-kana-dojo/.env.production
-      # The standalone build is compiled with /kanadojo as its basePath.
       HEALTH_URL: http://127.0.0.1:3102/kanadojo/api/healthcheck
       PAGE_URL: http://127.0.0.1:3102/kanadojo/spark
+      RUNTIME_ARCHIVE: ${{ runner.temp }}/kana-dojo-runtime.tgz
     steps:
-      - name: Download runtime artifact
-        uses: actions/download-artifact@v4
+      - name: Checkout adapter source into runner workspace
+        uses: actions/checkout@v4
         with:
-          name: kana-dojo-runtime-${{ github.sha }}
-          path: ${{ runner.temp }}/kana-dojo-runtime
+          ref: ${{ inputs.deploy_ref || 'main' }}
+
+      - name: Verify runner toolchain
+        run: |
+          set -euo pipefail
+          command -v node npm pm2 curl tar >/dev/null
+          test "$(node -p 'process.versions.node.split(".")[0]')" = "$NODE_VERSION"
+
+      - name: Install build dependencies in disposable workspace
+        run: npm ci --ignore-scripts --no-audit --no-fund
+
+      - name: Build standalone runtime outside production directory
+        env:
+          KANA_DOJO_BASE_PATH: /kanadojo
+          NEXT_PUBLIC_KANA_DOJO_BASE_PATH: /kanadojo
+          NEXT_PUBLIC_SUPABASE_URL: https://build.invalid
+          SUPABASE_SERVICE_ROLE_KEY: build-placeholder
+          ANALYTICS_DISABLED: 'true'
+          NEXT_PUBLIC_SENTRY_DISABLED: 'true'
+          SENTRY_DISABLED: 'true'
+          NODE_OPTIONS: --max-old-space-size=2048
+        run: |
+          set -euo pipefail
+          npm run clean
+          npm run build
+          test -f .next/standalone/server.js
+
+      - name: Package local runtime archive
+        run: |
+          set -euo pipefail
+          rm -rf release "$RUNTIME_ARCHIVE"
+          mkdir -p release/.next/standalone/.next
+          cp -a .next/standalone/. release/.next/standalone/
+          cp -a public release/.next/standalone/public
+          cp -a .next/static release/.next/standalone/.next/static
+          git rev-parse HEAD > release/RELEASE_SHA
+          tar -czf "$RUNTIME_ARCHIVE" -C release .
+          test -s "$RUNTIME_ARCHIVE"
 
       - name: Prepare runtime environment
         run: |
           set -euo pipefail
-          # The production directory is intentionally artifact-only. The
-          # hosted build above is the source of truth; requiring a Git clone
-          # in the runtime directory would reject an existing healthy install.
           if [ -e "$APP_DIR" ] && [ ! -d "$APP_DIR" ]; then
             echo "::error::$APP_DIR exists but is not a directory"
             exit 1
@@ -140,38 +112,36 @@ jobs:
           mv "$TMP_ENV" "$RUNTIME_ENV"
           chmod 600 "$RUNTIME_ENV"
 
-      - name: Install artifact with rollback
+      - name: Install runtime with rollback and health checks
         run: |
           set -euo pipefail
-          ARCHIVE="$(find "$RUNNER_TEMP/kana-dojo-runtime" -maxdepth 1 -name 'kana-dojo-runtime.tgz' -print -quit)"
-          test -n "$ARCHIVE"
-          PREV_SHA="$(git -C "$APP_DIR" rev-parse HEAD 2>/dev/null || true)"
+          test -s "$RUNTIME_ARCHIVE"
           BACKUP_DIR="$APP_DIR/.kana-dojo-previous"
+          test "$BACKUP_DIR" = "/var/www/spark-kana-dojo/.kana-dojo-previous"
           rm -rf "$BACKUP_DIR"
           mkdir -p "$BACKUP_DIR"
-          if [ -d "$APP_DIR/.next/standalone" ]; then cp -a "$APP_DIR/.next/standalone" "$BACKUP_DIR/standalone"; fi
-          if [ -d "$APP_DIR/.next/standalone/.next/static" ]; then cp -a "$APP_DIR/.next/standalone/.next/static" "$BACKUP_DIR/static"; fi
-          if [ -d "$APP_DIR/.next/standalone/public" ]; then cp -a "$APP_DIR/.next/standalone/public" "$BACKUP_DIR/public"; fi
-          if [ -f "$APP_DIR/RELEASE_SHA" ]; then cp -a "$APP_DIR/RELEASE_SHA" "$BACKUP_DIR/RELEASE_SHA"; fi
-          # Remove the previous runtime before extraction so stale hashed
-          # chunks cannot survive a clean build and mix with new HTML.
-          rm -rf "$APP_DIR/.next/standalone" "$APP_DIR/.next/static" "$APP_DIR/public"
-          mkdir -p "$APP_DIR/.next"
-          tar -xzf "$ARCHIVE" -C "$APP_DIR"
+          if [ -d "$APP_DIR/.next/standalone" ]; then
+            cp -a "$APP_DIR/.next/standalone" "$BACKUP_DIR/standalone"
+          fi
+          if [ -f "$APP_DIR/RELEASE_SHA" ]; then
+            cp -a "$APP_DIR/RELEASE_SHA" "$BACKUP_DIR/RELEASE_SHA"
+          fi
 
           set -a
           . "$RUNTIME_ENV"
           set +a
           rollback() {
             echo "::warning::health check failed; restoring previous runtime"
-            rm -rf "$APP_DIR/.next/standalone" "$APP_DIR/.next/static" "$APP_DIR/public"
+            rm -rf "$APP_DIR/.next/standalone"
             [ -d "$BACKUP_DIR/standalone" ] && cp -a "$BACKUP_DIR/standalone" "$APP_DIR/.next/standalone" || true
-            [ -d "$BACKUP_DIR/static" ] && mkdir -p "$APP_DIR/.next/standalone/.next" && cp -a "$BACKUP_DIR/static" "$APP_DIR/.next/standalone/.next/static" || true
-            [ -d "$BACKUP_DIR/public" ] && cp -a "$BACKUP_DIR/public" "$APP_DIR/.next/standalone/public" || true
             [ -f "$BACKUP_DIR/RELEASE_SHA" ] && cp -a "$BACKUP_DIR/RELEASE_SHA" "$APP_DIR/RELEASE_SHA" || true
             pm2 restart "$PM2_APP" --update-env || true
           }
           trap rollback ERR
+          rm -rf "$APP_DIR/.next/standalone"
+          mkdir -p "$APP_DIR/.next"
+          tar -xzf "$RUNTIME_ARCHIVE" -C "$APP_DIR"
+
           if pm2 describe "$PM2_APP" >/dev/null 2>&1; then
             pm2 restart "$PM2_APP" --update-env
           else

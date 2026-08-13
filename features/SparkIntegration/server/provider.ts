@@ -24,6 +24,8 @@ const VOCAB_COLUMNS =
 const GRAMMAR_COLUMNS =
   'slug,syllabus_point_id,name_ja,meaning_zh,level_code,examples,updated_at,lecture_md,renkei_md,comparison_md';
 const MAX_LIMIT = 200;
+const NON_WORD_MARKER = /[〜～]/;
+const AFFIX_POS_MARKER = /接頭|接尾/;
 
 export class SparkUnauthorizedError extends Error {
   constructor() {
@@ -138,6 +140,13 @@ function normalizeLevel(level: VocabLevel | undefined): string | undefined {
   return level ? level.toUpperCase() : undefined;
 }
 
+function isPlayableVocabulary(record: SparkVocabularyRecord): boolean {
+  return (
+    !NON_WORD_MARKER.test(record.headword) &&
+    !AFFIX_POS_MARKER.test(record.pos ?? '')
+  );
+}
+
 export async function createSparkLearningDataProvider(): Promise<SparkLearningDataProvider> {
   const accountId = await resolveSparkAccountId();
   if (!accountId) throw new SparkUnauthorizedError();
@@ -149,11 +158,14 @@ export async function createSparkLearningDataProvider(): Promise<SparkLearningDa
       level?: VocabLevel,
       limit?: number,
     ): Promise<SparkVocabularyRecord[]> {
+      const requestedLimit = normalizeLimit(limit);
       let query = supabase
         .from('v_public_vocabulary')
         .select(VOCAB_COLUMNS)
         .order('slug', { ascending: true })
-        .limit(normalizeLimit(limit));
+        // Fetch an overflow because affixes and placeholder entries are removed
+        // before this vocabulary-only game reaches a student.
+        .limit(Math.min(MAX_LIMIT, requestedLimit * 2));
       const normalizedLevel = normalizeLevel(level);
       if (normalizedLevel) query = query.eq('jlpt_level', normalizedLevel);
 
@@ -161,8 +173,8 @@ export async function createSparkLearningDataProvider(): Promise<SparkLearningDa
       if (error) throw new SparkDataSourceError();
       return ((data ?? []) as SparkRow[]).flatMap(row => {
         const mapped = mapSparkVocabularyRow(row);
-        return mapped ? [mapped] : [];
-      });
+        return mapped && isPlayableVocabulary(mapped) ? [mapped] : [];
+      }).slice(0, requestedLimit);
     },
 
     async listGrammar(
