@@ -4,6 +4,8 @@ import type { SparkGrammarRecord, SparkVocabularyRecord } from './types';
 export type SparkRow = Record<string, unknown>;
 
 const LEVELS = new Set<VocabLevel>(['n1', 'n2', 'n3', 'n4', 'n5']);
+const NON_WORD_MARKER = /[〜～]/;
+const AFFIX_POS_MARKER = /接頭|接尾/;
 
 function nonEmptyString(value: unknown): string | null {
   if (typeof value !== 'string') return null;
@@ -26,6 +28,19 @@ export function splitMeaning(value: unknown): string[] {
     .split(/[;,，；、]/u)
     .map(item => item.trim())
     .filter(Boolean);
+}
+
+/**
+ * Vocabulary-only games must never turn suffix/prefix placeholders into a
+ * faux word question. Fixed multiword expressions are deliberately retained.
+ */
+export function isSparkVocabularyGameItem(
+  record: SparkVocabularyRecord,
+): boolean {
+  return (
+    !NON_WORD_MARKER.test(record.headword) &&
+    !AFFIX_POS_MARKER.test(record.pos ?? '')
+  );
 }
 
 function parseExamples(value: unknown): Array<{ jp: string; zh: string }> {
@@ -58,7 +73,7 @@ export function mapSparkVocabularyRow(
   // malformed quiz item.
   if (!slug || !headword || !reading || meanings.length === 0) return null;
 
-  return {
+  const record: SparkVocabularyRecord = {
     kind: 'vocabulary',
     slug,
     headword,
@@ -71,6 +86,7 @@ export function mapSparkVocabularyRow(
     collocations: [],
     homographTrap: null,
   };
+  return isSparkVocabularyGameItem(record) ? record : null;
 }
 
 export function mapSparkGrammarRow(row: SparkRow): SparkGrammarRecord | null {

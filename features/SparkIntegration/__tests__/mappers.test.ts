@@ -49,6 +49,32 @@ describe('Spark learning mappers', () => {
     });
   });
 
+  it('rejects placeholder and affix rows from vocabulary games', () => {
+    expect(
+      mapSparkVocabularyRow({
+        slug: 'n4-suffix',
+        headword: '〜化',
+        reading: 'か',
+        meaning_zh: '……化',
+        pos: '接尾',
+        jlpt_level: 'N4',
+      }),
+    ).toBeNull();
+  });
+
+  it('retains fixed multiword vocabulary rather than treating it as grammar', () => {
+    expect(
+      mapSparkVocabularyRow({
+        slug: 'n4-expression',
+        headword: '気をつける',
+        reading: 'きをつける',
+        meaning_zh: '注意',
+        pos: '連語',
+        jlpt_level: 'N4',
+      }),
+    ).toMatchObject({ headword: '気をつける', meanings: ['注意'] });
+  });
+
   it('maps grammar examples and keeps grammar as a separate kind', () => {
     expect(
       mapSparkGrammarRow({
