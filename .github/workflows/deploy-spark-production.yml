@@ -38,7 +38,6 @@ jobs:
       RUNTIME_ENV: /var/www/spark-kana-dojo/.env.production
       HEALTH_URL: http://127.0.0.1:3102/kanadojo/api/healthcheck
       PAGE_URL: http://127.0.0.1:3102/kanadojo/spark
-      RUNTIME_ARCHIVE: ${{ runner.temp }}/kana-dojo-runtime.tgz
     steps:
       - name: Checkout adapter source into runner workspace
         uses: actions/checkout@v4
@@ -73,6 +72,7 @@ jobs:
       - name: Package local runtime archive
         run: |
           set -euo pipefail
+          RUNTIME_ARCHIVE="$RUNNER_TEMP/kana-dojo-runtime.tgz"
           rm -rf release "$RUNTIME_ARCHIVE"
           mkdir -p release/.next/standalone/.next
           cp -a .next/standalone/. release/.next/standalone/
@@ -115,6 +115,7 @@ jobs:
       - name: Install runtime with rollback and health checks
         run: |
           set -euo pipefail
+          RUNTIME_ARCHIVE="$RUNNER_TEMP/kana-dojo-runtime.tgz"
           test -s "$RUNTIME_ARCHIVE"
           BACKUP_DIR="$APP_DIR/.kana-dojo-previous"
           test "$BACKUP_DIR" = "/var/www/spark-kana-dojo/.kana-dojo-previous"
