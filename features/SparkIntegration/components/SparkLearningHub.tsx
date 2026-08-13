@@ -10,6 +10,7 @@ type LearningMode = 'vocabulary' | 'grammar';
 const LEVELS: VocabLevel[] = ['n5', 'n4', 'n3', 'n2', 'n1'];
 
 function readHandoffFromHash(): string | null {
+  if (typeof window === 'undefined') return null;
   const prefix = '#spark-handoff=';
   if (!window.location.hash.startsWith(prefix)) return null;
   const encoded = window.location.hash.slice(prefix.length);
@@ -24,12 +25,13 @@ function readHandoffFromHash(): string | null {
 export default function SparkLearningHub() {
   const [mode, setMode] = useState<LearningMode>('vocabulary');
   const [level, setLevel] = useState<VocabLevel>('n5');
-  const [authState, setAuthState] = useState<'loading' | 'ready' | 'error'>('loading');
+  const [authState, setAuthState] = useState<'loading' | 'ready' | 'error'>(
+    () => (readHandoffFromHash() ? 'loading' : 'ready'),
+  );
 
   useEffect(() => {
     const handoff = readHandoffFromHash();
     if (!handoff) {
-      setAuthState('ready');
       return;
     }
 
@@ -64,7 +66,7 @@ export default function SparkLearningHub() {
   if (authState === 'loading') {
     return (
       <div className='flex min-h-[60dvh] items-center justify-center text-(--secondary-color)'>
-        <p>????????????</p>
+        <p>正在连接星火学习账户…</p>
       </div>
     );
   }
@@ -72,7 +74,7 @@ export default function SparkLearningHub() {
   if (authState === 'error') {
     return (
       <div className='flex min-h-[60dvh] items-center justify-center px-6 text-center text-(--secondary-color)'>
-        <p>?????????????????????</p>
+        <p>学习会话连接失败，请返回星火学习门户后重新进入。</p>
       </div>
     );
   }
@@ -84,33 +86,33 @@ export default function SparkLearningHub() {
           Spark Learning
         </p>
         <h1 className='mt-2 text-3xl font-bold text-(--text-color)'>
-          ???????
+          星火日语闯关
         </h1>
         <p className='mt-2 text-(--secondary-color)'>
-          ?????????????????? KanaDojo ????????????????????????
+          词汇与语法分开学习；词汇题使用 KanaDojo 的原生游戏框架和星火词库。
         </p>
         <p className='mt-3 text-sm text-(--secondary-color)'>
-          ???????{' '}
+          本模块基于{' '}
           <a
             className='font-semibold text-(--main-color) underline underline-offset-4'
             href='https://github.com/arronflying-lab/spark-kana-dojo'
             target='_blank'
             rel='noreferrer'
           >
-            KanaDojo ???????
-          </a>{' '}
-          ????? AGPL-3.0-or-later?
+            KanaDojo 修改后的完整源代码
+          </a>
+          ，依照 AGPL-3.0-or-later 提供。
         </p>
       </header>
 
       <nav
         className='flex flex-wrap gap-2 rounded-2xl border border-(--border-color) bg-(--card-color) p-2'
-        aria-label='??????'
+        aria-label='学习内容'
       >
         {(
           [
-            ['vocabulary', '????'],
-            ['grammar', '????'],
+            ['vocabulary', '单词闯关'],
+            ['grammar', '语法学习'],
           ] as const
         ).map(([value, label]) => (
           <button
@@ -129,8 +131,8 @@ export default function SparkLearningHub() {
         ))}
       </nav>
 
-      <section className='flex flex-wrap items-center gap-2' aria-label='JLPT ??'>
-        <span className='mr-2 text-sm font-semibold text-(--secondary-color)'>??</span>
+      <section className='flex flex-wrap items-center gap-2' aria-label='JLPT 等级'>
+        <span className='mr-2 text-sm font-semibold text-(--secondary-color)'>等级</span>
         {LEVELS.map(item => (
           <button
             key={item}
@@ -149,7 +151,7 @@ export default function SparkLearningHub() {
       </section>
 
       {mode === 'vocabulary' ? (
-        <SparkVocabularyGame key={`vocabulary-${level}`} level={level} limit={20} />
+        <SparkVocabularyGame key={`vocabulary-${level}`} level={level} />
       ) : (
         <SparkGrammarStudy key={`grammar-${level}`} level={level} limit={20} />
       )}
