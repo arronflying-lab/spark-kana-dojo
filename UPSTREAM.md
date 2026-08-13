@@ -11,9 +11,11 @@ repository [lingdojo/kana-dojo](https://github.com/lingdojo/kana-dojo).
 
 The upstream application was copied into an isolated downstream directory so
 that the Spark portal's private repository is not mixed with AGPL source.
-This is an engineering boundary, not a license exemption. Before any network
-deployment or user access, the downstream source-offer and attribution
-requirements must be reviewed and implemented.
+This is an engineering boundary, not a license exemption. The corresponding
+source for the deployed Spark adapter is published at
+`https://github.com/arronflying-lab/spark-kana-dojo`; the in-product Spark
+learning hub links there for every remote user. Do not put Spark portal source,
+environment files, service-role keys, or production data in that repository.
 
 ## Downstream compatibility delta
 

@@ -64,7 +64,7 @@ export default function SparkLearningHub() {
   if (authState === 'loading') {
     return (
       <div className='flex min-h-[60dvh] items-center justify-center text-(--secondary-color)'>
-        <p>正在验证星火登录状态……</p>
+        <p>????????????</p>
       </div>
     );
   }
@@ -72,7 +72,7 @@ export default function SparkLearningHub() {
   if (authState === 'error') {
     return (
       <div className='flex min-h-[60dvh] items-center justify-center px-6 text-center text-(--secondary-color)'>
-        <p>星火登录交接已失效，请从星火门户重新进入。</p>
+        <p>?????????????????????</p>
       </div>
     );
   }
@@ -84,21 +84,33 @@ export default function SparkLearningHub() {
           Spark Learning
         </p>
         <h1 className='mt-2 text-3xl font-bold text-(--text-color)'>
-          单词与语法学习
+          ???????
         </h1>
         <p className='mt-2 text-(--secondary-color)'>
-          学习内容来自星火数据库；单词游戏使用 KanaDojo 的成熟游戏框架，语法内容保持独立，不混入单词题。
+          ?????????????????? KanaDojo ????????????????????????
+        </p>
+        <p className='mt-3 text-sm text-(--secondary-color)'>
+          ???????{' '}
+          <a
+            className='font-semibold text-(--main-color) underline underline-offset-4'
+            href='https://github.com/arronflying-lab/spark-kana-dojo'
+            target='_blank'
+            rel='noreferrer'
+          >
+            KanaDojo ???????
+          </a>{' '}
+          ????? AGPL-3.0-or-later?
         </p>
       </header>
 
       <nav
         className='flex flex-wrap gap-2 rounded-2xl border border-(--border-color) bg-(--card-color) p-2'
-        aria-label='学习内容类型'
+        aria-label='??????'
       >
         {(
           [
-            ['vocabulary', '单词闯关'],
-            ['grammar', '语法学习'],
+            ['vocabulary', '????'],
+            ['grammar', '????'],
           ] as const
         ).map(([value, label]) => (
           <button
@@ -117,8 +129,8 @@ export default function SparkLearningHub() {
         ))}
       </nav>
 
-      <section className='flex flex-wrap items-center gap-2' aria-label='JLPT 等级'>
-        <span className='mr-2 text-sm font-semibold text-(--secondary-color)'>等级</span>
+      <section className='flex flex-wrap items-center gap-2' aria-label='JLPT ??'>
+        <span className='mr-2 text-sm font-semibold text-(--secondary-color)'>??</span>
         {LEVELS.map(item => (
           <button
             key={item}
