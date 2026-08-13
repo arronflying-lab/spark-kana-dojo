@@ -83,7 +83,10 @@ jobs:
     name: Install runtime artifact on Shanghai
     needs: build
     runs-on: [self-hosted, linux, shanghai-kana-dojo]
-    timeout-minutes: 15
+    # The runtime archive is roughly 135 MB. On the Shanghai runner the
+    # artifact transfer alone can exceed 15 minutes, before installation and
+    # the rollback-protected health checks even start.
+    timeout-minutes: 35
     environment:
       name: production
       url: https://eju.japanedupath.com/kanadojo/spark
