@@ -12,7 +12,9 @@ const COOKIE_NAME = 'spark_kana_dojo_session';
 const SESSION_MAX_AGE = 30 * 24 * 60 * 60;
 
 function getAdminClient() {
-  const url = process.env.NEXT_PUBLIC_SUPABASE_URL?.trim();
+  const url =
+    process.env.SUPABASE_URL?.trim() ||
+    process.env.NEXT_PUBLIC_SUPABASE_URL?.trim();
   const key = process.env.SUPABASE_SERVICE_ROLE_KEY?.trim();
   if (!url || !key) return null;
   return createClient(url, key, {
