@@ -104,21 +104,17 @@ jobs:
           name: kana-dojo-runtime-${{ github.sha }}
           path: ${{ runner.temp }}/kana-dojo-runtime
 
-      - name: Prepare checkout and runtime environment
+      - name: Prepare runtime environment
         run: |
           set -euo pipefail
-          if [ -d "$APP_DIR/.git" ]; then
-            REMOTE="$(git -C "$APP_DIR" remote get-url origin 2>/dev/null || true)"
-            test "$REMOTE" = "$REPO_URL" \
-              || { echo "::error::unexpected adapter remote: $REMOTE"; exit 1; }
-          elif [ ! -e "$APP_DIR" ]; then
-            git -c credential.helper=store clone --branch "$BRANCH" --single-branch "$REPO_URL" "$APP_DIR"
-          else
-            echo "::error::$APP_DIR exists but is not a git checkout"
+          # The production directory is intentionally artifact-only. The
+          # hosted build above is the source of truth; requiring a Git clone
+          # in the runtime directory would reject an existing healthy install.
+          if [ -e "$APP_DIR" ] && [ ! -d "$APP_DIR" ]; then
+            echo "::error::$APP_DIR exists but is not a directory"
             exit 1
           fi
-          git -C "$APP_DIR" -c credential.helper=store fetch --prune origin "$BRANCH"
-          git -C "$APP_DIR" checkout -B "$BRANCH" "origin/$BRANCH"
+          mkdir -p "$APP_DIR"
 
           MAIN_ENV="$MAIN_APP_DIR/.env.production"
           [ -s "$MAIN_ENV" ] || { echo "::error::$MAIN_ENV is missing"; exit 1; }
