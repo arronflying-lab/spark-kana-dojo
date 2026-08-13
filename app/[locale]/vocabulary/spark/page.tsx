@@ -17,5 +17,5 @@ export const metadata: Metadata = {
 };
 
 export default function SparkVocabularyPage() {
-  return <SparkVocabularyGame level='n5' limit={20} />;
+  return <SparkVocabularyGame level='n5' />;
 }

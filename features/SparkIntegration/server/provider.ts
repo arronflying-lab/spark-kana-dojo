@@ -50,7 +50,8 @@ let adminClient: SupabaseClient | undefined;
 function getAdminClient(): SupabaseClient {
   if (adminClient) return adminClient;
 
-  const url = requiredEnv('NEXT_PUBLIC_SUPABASE_URL');
+  const url =
+    process.env.SUPABASE_URL?.trim() || requiredEnv('NEXT_PUBLIC_SUPABASE_URL');
   const serviceRoleKey = requiredEnv('SUPABASE_SERVICE_ROLE_KEY');
 
   adminClient = createClient(url, serviceRoleKey, {

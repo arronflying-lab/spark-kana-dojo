@@ -1,441 +1,380 @@
 'use client';
 
-import { useCallback, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { motion } from 'framer-motion';
-import { toHiragana } from 'wanakana';
-import { useShallow } from 'zustand/react/shallow';
-import type { IVocabObj } from '@/entities/vocabulary';
-import { useCorrect, useError } from '@/shared/hooks/generic/useAudio';
-import { useCrazyModeTrigger } from '@/features/CrazyMode/hooks/useCrazyModeTrigger';
-import { useStatsStore } from '@/features/Progress';
-import Stars from '@/shared/ui-composite/Game/Stars';
 import { GameBottomBar } from '@/shared/ui-composite/Game/GameBottomBar';
 import TilesModeGrid from '@/shared/ui-composite/Game/TilesModeGrid';
-import FuriganaText from '@/shared/ui-composite/text/FuriganaText';
-import { buttonBorderStyles } from '@/shared/utils/styles';
 import { getAnswerRowClassName } from '@/shared/ui-composite/Game/TilesModeShared';
+import {
+  type SparkQuestAnswer,
+  type SparkQuestAnswerResult,
+  type SparkQuestQuestion,
+  type SparkQuestSession,
+} from '../portalVocabQuest';
 
-type QuestionKind =
-  | 'word_to_meaning'
-  | 'meaning_to_word'
-  | 'kanji_to_kana'
-  | 'kana_to_kanji';
-
-type Tile = { id: number; value: string };
-
-type SparkQuestion = {
-  kind: QuestionKind;
-  vocab: IVocabObj;
-  prompt: string;
-  answer: string;
-  options?: string[];
-  tiles?: Tile[];
+type FeedbackState = {
+  askedQuestion: SparkQuestQuestion;
+  result: SparkQuestAnswerResult;
+  nextSession: SparkQuestSession;
 };
 
-type Feedback = { correct: boolean; selected: string };
+function freshRequestId() {
+  return typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function'
+    ? crypto.randomUUID()
+    : `00000000-0000-4000-8000-${Math.random().toString(16).slice(2).padEnd(12, '0').slice(0, 12)}`;
+}
 
-const KANJI_PATTERN = /[\u4e00-\u9faf]/;
+function optionText(question: SparkQuestQuestion, label: string) {
+  if (question.type === 'meaning_choice' || question.type === 'context_choice') return label;
+  return <span lang='ja'>{label}</span>;
+}
 
-const shuffle = <T,>(items: T[]): T[] => {
-  const result = [...items];
-  for (let index = result.length - 1; index > 0; index -= 1) {
-    const swapIndex = Math.floor(Math.random() * (index + 1));
-    [result[index], result[swapIndex]] = [
-      result[swapIndex],
-      result[index],
-    ];
-  }
-  return result;
-};
-
-const hasKanji = (word: string): boolean => KANJI_PATTERN.test(word);
-
-const firstMeaning = (vocab: IVocabObj): string =>
-  vocab.meanings.find(meaning => meaning.trim().length > 0)?.trim() ?? '';
-
-const normalizedReading = (reading: string): string =>
-  toHiragana(reading.normalize('NFKC')).replace(/\s+/g, '').trim();
-
-const playableVocabulary = (vocabulary: IVocabObj[]): IVocabObj[] =>
-  vocabulary.filter(
-    vocab =>
-      vocab.word.trim().length > 0 &&
-      normalizedReading(vocab.reading).length > 0 &&
-      firstMeaning(vocab).length > 0,
-  );
-
-const pickVocabulary = (
-  vocabulary: IVocabObj[],
-  previousWord?: string,
-): IVocabObj => {
-  const alternatives = vocabulary.filter(vocab => vocab.word !== previousWord);
-  const source = alternatives.length > 0 ? alternatives : vocabulary;
-  return source[Math.floor(Math.random() * source.length)];
-};
-
-const distinctOptions = (
-  vocabulary: IVocabObj[],
-  answer: string,
-  getValue: (vocab: IVocabObj) => string,
-): string[] => {
-  const distractors = shuffle(
-    Array.from(
-      new Set(
-        vocabulary
-          .map(getValue)
-          .map(value => value.trim())
-          .filter(value => value.length > 0 && value !== answer),
-      ),
-    ),
-  ).slice(0, 3);
-  return shuffle([answer, ...distractors]);
-};
-
-const createReadingTiles = (
-  answer: string,
-  vocabulary: IVocabObj[],
-): Tile[] => {
-  const answerChars = Array.from(answer);
-  const distractorPool = Array.from(
-    new Set(
-      vocabulary.flatMap(vocab => Array.from(normalizedReading(vocab.reading))),
-    ),
-  ).filter(char => !answerChars.includes(char));
-  const distractorCount = Math.min(4, distractorPool.length);
-  return shuffle([
-    ...answerChars,
-    ...shuffle(distractorPool).slice(0, distractorCount),
-  ]).map((value, id) => ({ id, value }));
-};
-
-const createQuestion = (
-  source: IVocabObj[],
-  sequence: number,
-  previousWord?: string,
-): SparkQuestion | null => {
-  const vocabulary = playableVocabulary(source);
-  if (vocabulary.length < 2) return null;
-
-  const kanjiVocabulary = vocabulary.filter(vocab => hasKanji(vocab.word));
-  const kinds: QuestionKind[] = ['word_to_meaning', 'meaning_to_word'];
-  if (kanjiVocabulary.length >= 2) {
-    kinds.push('kanji_to_kana', 'kana_to_kanji');
-  }
-
-  const kind = kinds[sequence % kinds.length];
-  const candidates =
-    kind === 'kanji_to_kana' || kind === 'kana_to_kanji'
-      ? kanjiVocabulary
-      : vocabulary;
-  const vocab = pickVocabulary(candidates, previousWord);
-  const reading = normalizedReading(vocab.reading);
-  const meaning = firstMeaning(vocab);
-
-  if (kind === 'word_to_meaning') {
-    return {
-      kind,
-      vocab,
-      prompt: `${vocab.word} 中文？`,
-      answer: meaning,
-      options: distinctOptions(vocabulary, meaning, firstMeaning),
-    };
-  }
-
-  if (kind === 'meaning_to_word') {
-    return {
-      kind,
-      vocab,
-      prompt: `${meaning} 日语？`,
-      answer: vocab.word,
-      options: distinctOptions(vocabulary, vocab.word, item => item.word),
-    };
-  }
-
-  if (kind === 'kanji_to_kana') {
-    return {
-      kind,
-      vocab,
-      prompt: `${vocab.word} 读音？`,
-      answer: reading,
-      tiles: createReadingTiles(reading, vocabulary),
-    };
-  }
-
-  return {
-    kind,
-    vocab,
-    prompt: `${reading} 汉字？`,
-    answer: vocab.word,
-    options: distinctOptions(kanjiVocabulary, vocab.word, item => item.word),
-  };
-};
-
-const answerLabel = (question: SparkQuestion): string => {
-  if (question.kind === 'word_to_meaning') return question.answer;
-  if (question.kind === 'kanji_to_kana') return question.answer;
-  if (question.kind === 'kana_to_kanji') return question.answer;
-  const reading = normalizedReading(question.vocab.reading);
-  return reading ? `${question.answer}（${reading}）` : question.answer;
-};
-
-const questionDisplay = (question: SparkQuestion) => {
-  if (question.kind === 'meaning_to_word') {
-    return <p className='text-center text-4xl sm:text-6xl'>{firstMeaning(question.vocab)}</p>;
-  }
-
-  if (question.kind === 'kana_to_kanji') {
-    return (
-      <p className='text-center text-5xl sm:text-7xl' lang='ja'>
-        {normalizedReading(question.vocab.reading)}
-      </p>
-    );
-  }
-
+function feedbackContent(result: SparkQuestAnswerResult) {
+  const { correctHeadword, correctReading, meaningZh } = result.feedback;
   return (
-    <FuriganaText
-      text={question.vocab.word}
-      reading={question.kind === 'word_to_meaning' ? question.vocab.reading : undefined}
-      className='text-center text-5xl sm:text-7xl'
-      lang='ja'
-    />
+    <span>
+      <span lang='ja' className='font-semibold'>
+        {correctHeadword}
+        {correctReading ? `（${correctReading}）` : ''}
+      </span>
+      {meaningZh ? ` · ${meaningZh}` : ''}
+    </span>
   );
-};
+}
 
 export default function SparkVocabularyChallenge({
-  vocabulary,
+  session,
+  onAnswer,
+  onSessionUpdate,
+  onAbandon,
+  onExit,
 }: {
-  vocabulary: IVocabObj[];
+  session: SparkQuestSession;
+  onAnswer: (
+    answer: SparkQuestAnswer,
+    elapsedMs: number,
+    requestId: string,
+  ) => Promise<SparkQuestAnswerResult>;
+  onSessionUpdate: (session: SparkQuestSession) => void;
+  onAbandon: () => Promise<void>;
+  onExit: () => void;
 }) {
-  const [sequence, setSequence] = useState(0);
-  const [question, setQuestion] = useState<SparkQuestion | null>(() =>
-    createQuestion(vocabulary, 0),
-  );
-  const [selectedOption, setSelectedOption] = useState<string | null>(null);
-  const [selectedTileIds, setSelectedTileIds] = useState<number[]>([]);
-  const [feedback, setFeedback] = useState<Feedback | null>(null);
-  const [isCelebrating, setIsCelebrating] = useState(false);
-  const { playCorrect } = useCorrect();
-  const { playErrorTwice } = useError();
-  const { trigger: triggerCrazyMode } = useCrazyModeTrigger();
-  const {
-    score,
-    setScore,
-    incrementVocabularyCorrect,
-    incrementWrongStreak,
-    resetWrongStreak,
-    incrementCorrectAnswers,
-    incrementWrongAnswers,
-    addCharacterToHistory,
-    incrementCharacterScore,
-  } = useStatsStore(
-    useShallow(state => ({
-      score: state.score,
-      setScore: state.setScore,
-      incrementVocabularyCorrect: state.incrementVocabularyCorrect,
-      incrementWrongStreak: state.incrementWrongStreak,
-      resetWrongStreak: state.resetWrongStreak,
-      incrementCorrectAnswers: state.incrementCorrectAnswers,
-      incrementWrongAnswers: state.incrementWrongAnswers,
-      addCharacterToHistory: state.addCharacterToHistory,
-      incrementCharacterScore: state.incrementCharacterScore,
-    })),
-  );
+  const [activeSession, setActiveSession] = useState(session);
+  const [selectedOptionId, setSelectedOptionId] = useState<string | null>(null);
+  const [selectedTileIndexes, setSelectedTileIndexes] = useState<number[]>([]);
+  const [selectedPairId, setSelectedPairId] = useState<string | null>(null);
+  const [mapping, setMapping] = useState<Record<string, string>>({});
+  const [feedback, setFeedback] = useState<FeedbackState | null>(null);
+  const [requestError, setRequestError] = useState<string | null>(null);
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const startedAt = useRef(Date.now());
+  const requestIds = useRef(new Map<number, string>());
 
-  const recordAnswer = useCallback(
-    (isCorrect: boolean, selected: string) => {
-      if (!question || feedback) return;
-
-      setSelectedOption(selected);
-      setFeedback({ correct: isCorrect, selected });
-      setIsCelebrating(isCorrect);
-      triggerCrazyMode();
-
-      if (isCorrect) {
-        playCorrect();
-        addCharacterToHistory(question.vocab.word);
-        incrementCharacterScore(question.vocab.word, 'correct');
-        incrementVocabularyCorrect();
-        incrementCorrectAnswers();
-        resetWrongStreak();
-        setScore(score + 1);
-        return;
-      }
-
-      playErrorTwice();
-      incrementCharacterScore(question.vocab.word, 'wrong');
-      incrementWrongAnswers();
-      incrementWrongStreak();
-      setScore(Math.max(0, score - 1));
-    },
-    [
-      addCharacterToHistory,
-      feedback,
-      incrementCharacterScore,
-      incrementCorrectAnswers,
-      incrementVocabularyCorrect,
-      incrementWrongAnswers,
-      incrementWrongStreak,
-      playCorrect,
-      playErrorTwice,
-      question,
-      resetWrongStreak,
-      score,
-      setScore,
-      triggerCrazyMode,
-    ],
-  );
-
-  const handleOption = (option: string) => {
-    if (!question || feedback) return;
-    recordAnswer(option === question.answer, option);
-  };
-
-  const handleTile = (tileId: number) => {
-    if (feedback) return;
-    setSelectedTileIds(current =>
-      current.includes(tileId)
-        ? current.filter(id => id !== tileId)
-        : [...current, tileId],
-    );
-  };
-
-  const checkTiles = () => {
-    if (!question?.tiles || feedback) return;
-    const selected = selectedTileIds
-      .map(id => question.tiles?.find(tile => tile.id === id)?.value ?? '')
-      .join('');
-    if (selected.length !== Array.from(question.answer).length) return;
-    recordAnswer(selected === question.answer, selected);
-  };
-
-  const nextQuestion = () => {
-    if (!question) return;
-    const nextSequence = sequence + 1;
-    setSequence(nextSequence);
-    setQuestion(createQuestion(vocabulary, nextSequence, question.vocab.word));
-    setSelectedOption(null);
-    setSelectedTileIds([]);
+  useEffect(() => {
+    setActiveSession(session);
     setFeedback(null);
-    setIsCelebrating(false);
+    setSelectedOptionId(null);
+    setSelectedTileIndexes([]);
+    setSelectedPairId(null);
+    setMapping({});
+    setRequestError(null);
+    startedAt.current = Date.now();
+  }, [session]);
+
+  const question = activeSession.currentQuestion;
+  const tileMap = useMemo(
+    () => new Map((question?.type === 'reading_tiles' ? question.tiles : []).map((tile, index) => [index, tile.label])),
+    [question],
+  );
+
+  const submit = async (answer: SparkQuestAnswer) => {
+    if (!question || feedback || isSubmitting) return;
+    setRequestError(null);
+    setIsSubmitting(true);
+    const requestId = requestIds.current.get(question.index) ?? freshRequestId();
+    requestIds.current.set(question.index, requestId);
+    try {
+      const result = await onAnswer(
+        answer,
+        Math.min(600000, Math.max(0, Math.round(Date.now() - startedAt.current))),
+        requestId,
+      );
+      const nextSession: SparkQuestSession = {
+        ...result.summary,
+        currentQuestion: result.currentQuestion,
+      };
+      setFeedback({ askedQuestion: question, result, nextSession });
+    } catch (error) {
+      setRequestError(error instanceof Error ? error.message : '答案没有保存，请重试。');
+    } finally {
+      setIsSubmitting(false);
+    }
   };
+
+  const continueAfterFeedback = () => {
+    if (!feedback) return;
+    const { nextSession } = feedback;
+    if (nextSession.status !== 'active' || !nextSession.currentQuestion) {
+      return;
+    }
+    onSessionUpdate(nextSession);
+    setActiveSession(nextSession);
+    setFeedback(null);
+    setSelectedOptionId(null);
+    setSelectedTileIndexes([]);
+    setSelectedPairId(null);
+    setMapping({});
+    setRequestError(null);
+    startedAt.current = Date.now();
+  };
+
+  if (feedback && feedback.nextSession.status !== 'active') {
+    const { nextSession, result } = feedback;
+    const passed = nextSession.status === 'passed';
+    return (
+      <div className='mx-auto flex min-h-[58dvh] w-full max-w-2xl flex-col items-center justify-center gap-5 px-4 text-center'>
+        <motion.div
+          initial={{ opacity: 0, scale: 0.94 }}
+          animate={{ opacity: 1, scale: 1 }}
+          className='flex flex-col items-center gap-3'
+        >
+          <p className='text-5xl' aria-hidden='true'>{passed ? '🎉' : '💪'}</p>
+          <h2 className='text-3xl font-bold text-(--text-color)'>
+            {passed ? '本关通过！' : '这次差一点，再来一次。'}
+          </h2>
+          <p className='text-(--secondary-color)'>
+            答对 {nextSession.correctCount} / {nextSession.questionCount} 题 · 获得 {nextSession.xpAwarded} XP
+          </p>
+          {passed && (
+            <p className='text-amber-500' aria-label={`${nextSession.stars ?? 0} 星`}>
+              {'★'.repeat(nextSession.stars ?? 0)}{'☆'.repeat(Math.max(0, 3 - (nextSession.stars ?? 0)))}
+            </p>
+          )}
+        </motion.div>
+
+        {!passed && result.failureReview.length > 0 && (
+          <div className='w-full rounded-2xl border border-(--border-color) bg-(--card-color) p-4 text-left'>
+            <p className='font-semibold text-(--text-color)'>本次需要复习</p>
+            <ul className='mt-2 grid gap-2 text-sm text-(--secondary-color)'>
+              {result.failureReview.slice(0, 8).map(item => (
+                <li key={item.slug}>
+                  <span lang='ja' className='font-semibold text-(--text-color)'>
+                    {item.headword}（{item.reading}）
+                  </span>
+                  {' · '}{item.meaningZh}
+                </li>
+              ))}
+            </ul>
+          </div>
+        )}
+
+        <button
+          type='button'
+          className='rounded-2xl bg-(--main-color) px-7 py-4 text-lg font-bold text-white shadow-sm transition hover:-translate-y-0.5'
+          onClick={onExit}
+        >
+          返回单词路径
+        </button>
+      </div>
+    );
+  }
 
   if (!question) {
     return (
-      <p className='py-20 text-center text-(--secondary-color)'>
-        当前等级没有可用于单词闯关的词汇。
-      </p>
+      <div className='flex min-h-[58dvh] flex-col items-center justify-center gap-4 text-center text-(--secondary-color)'>
+        <p>这次会话没有可继续的题目。</p>
+        <button type='button' className='font-semibold text-(--main-color) underline' onClick={onExit}>
+          返回单词路径
+        </button>
+      </div>
     );
   }
 
-  const tiles = question.tiles;
-  const tileMap = new Map(tiles?.map(tile => [tile.id, tile.value]) ?? []);
-  const selectedTileText = selectedTileIds
-    .map(id => tileMap.get(id) ?? '')
-    .join('');
-  const isTileQuestion = question.kind === 'kanji_to_kana';
+  if (question.type === 'reading_input') {
+    return (
+      <div className='flex min-h-[58dvh] flex-col items-center justify-center gap-4 px-5 text-center text-(--secondary-color)'>
+        <h2 className='text-2xl font-bold text-(--text-color)'>旧版输入题已停用</h2>
+        <p>为保证练习方式一致，请结束这个旧会话后从单词路径重新开始。</p>
+        <button
+          type='button'
+          className='rounded-2xl bg-(--main-color) px-6 py-3 font-bold text-white'
+          onClick={() => void onAbandon()}
+        >
+          结束旧会话
+        </button>
+      </div>
+    );
+  }
+
   const isAnswered = feedback !== null;
+  const displaySession = feedback?.nextSession ?? activeSession;
+  const isTileQuestion = question.type === 'reading_tiles';
+  const isMatchingQuestion = question.type === 'matching';
+  const selectedTileIds = selectedTileIndexes.map(index => question.type === 'reading_tiles' ? question.tiles[index]?.id ?? '' : '');
+  const canCheck = isTileQuestion
+    ? selectedTileIds.length === question.answerLength
+    : isMatchingQuestion
+      ? Object.keys(mapping).length === question.pairs.length
+      : selectedOptionId !== null;
+
+  const selectOption = (optionId: string) => {
+    if (isAnswered || isSubmitting) return;
+    setSelectedOptionId(optionId);
+    void submit({ optionId });
+  };
+
+  const selectTile = (tileIndex: number) => {
+    if (isAnswered || isSubmitting) return;
+    setSelectedTileIndexes(current =>
+      current.includes(tileIndex)
+        ? current.filter(index => index !== tileIndex)
+        : [...current, tileIndex],
+    );
+  };
+
+  const selectMatchingOption = (optionId: string) => {
+    if (!selectedPairId || isAnswered || isSubmitting) return;
+    setMapping(current => {
+      const withoutDuplicate = Object.fromEntries(
+        Object.entries(current).filter(([pairId, mappedOption]) => pairId === selectedPairId || mappedOption !== optionId),
+      );
+      return { ...withoutDuplicate, [selectedPairId]: optionId };
+    });
+  };
 
   return (
-    <div className='relative flex min-h-[68dvh] w-full flex-col items-center gap-8 pb-36 sm:gap-10'>
-      <div className='flex w-full flex-col items-center gap-4 pt-4'>
-        <p className='text-center text-lg font-semibold text-(--secondary-color) sm:text-xl'>
-          {question.prompt}
+    <div className='relative mx-auto flex min-h-[68dvh] w-full max-w-4xl flex-col gap-7 pb-36'>
+      <header className='flex items-center justify-between gap-4 pt-2'>
+        <p className='text-xl font-bold text-(--text-color) sm:text-2xl'>
+          第 {question.index + 1} / {displaySession.questionCount} 题
         </p>
+        <p className='text-2xl tracking-wide text-rose-500' aria-label={`剩余 ${displaySession.hearts} 颗心`}>
+          {'♥'.repeat(displaySession.hearts)}{'♡'.repeat(Math.max(0, displaySession.maxHearts - displaySession.hearts))}
+        </p>
+      </header>
+
+      <div className='h-3 overflow-hidden rounded-full bg-(--border-color)'>
         <motion.div
-          key={`${sequence}-${question.kind}-${question.vocab.word}`}
-          initial={{ opacity: 0, y: -14 }}
-          animate={{ opacity: 1, y: 0 }}
-          className='flex min-h-28 items-center justify-center'
-        >
-          {questionDisplay(question)}
-        </motion.div>
+          className='h-full rounded-full bg-(--main-color)'
+          animate={{ width: `${Math.max(5, displaySession.progress * 100)}%` }}
+        />
       </div>
 
-      {isTileQuestion && tiles ? (
-        <TilesModeGrid
-          allTiles={tileMap}
-          placedTileIds={selectedTileIds}
-          onTileClick={tileId => handleTile(tileId)}
-          isTileDisabled={isAnswered}
-          isCelebrating={isCelebrating}
-          celebrationMode='bounce'
-          tilesPerRow={Math.ceil(tiles.length / 2)}
-          tileSizeClassName='text-2xl sm:text-3xl'
-          tileLang='ja'
-          answerRowClassName={getAnswerRowClassName('5rem')}
-          tilesWrapperKey={`${sequence}-${question.vocab.word}`}
-        />
-      ) : (
-        <div className='grid w-full max-w-3xl grid-cols-1 gap-3 sm:grid-cols-2 sm:gap-4'>
-          {question.options?.map(option => {
-            const isCorrectOption = option === question.answer;
-            const isSelected = option === selectedOption;
-            return (
-              <motion.button
-                key={option}
-                type='button'
-                disabled={isAnswered}
-                whileTap={!isAnswered ? { scale: 0.97 } : undefined}
-                animate={
-                  isAnswered && (isCorrectOption || isSelected)
-                    ? { scale: [1, 1.035, 1] }
-                    : undefined
-                }
-                className={`min-h-24 rounded-2xl border-b-4 px-5 py-4 text-left text-2xl text-(--secondary-color) transition sm:text-3xl ${buttonBorderStyles} ${
-                  isAnswered && isCorrectOption
-                    ? 'border-emerald-500 bg-emerald-500/10'
-                    : isAnswered && isSelected
-                      ? 'border-rose-500 bg-rose-500/10'
-                      : 'border-(--secondary-color)/50 hover:border-(--main-color) hover:bg-(--card-color)'
-                }`}
-                lang={
-                  question.kind === 'word_to_meaning' ||
-                  question.kind === 'meaning_to_word'
-                    ? undefined
-                    : 'ja'
-                }
-                onClick={() => handleOption(option)}
-              >
-                {question.kind === 'meaning_to_word' ||
-                question.kind === 'kana_to_kanji' ? (
-                  <FuriganaText
-                    text={option}
-                    reading={
-                      question.kind === 'meaning_to_word'
-                        ? vocabulary.find(item => item.word === option)?.reading
-                        : undefined
-                    }
-                  />
-                ) : (
-                  option
-                )}
-              </motion.button>
-            );
-          })}
-        </div>
-      )}
+      <motion.div
+        key={`${activeSession.sessionId}-${question.index}`}
+        initial={{ opacity: 0, y: 12 }}
+        animate={{ opacity: 1, y: 0 }}
+        className='flex flex-col gap-5'
+      >
+        <p className='text-center text-3xl font-semibold leading-relaxed text-(--text-color) sm:text-5xl' lang={question.type === 'context_choice' ? 'ja' : undefined}>
+          {question.prompt}
+        </p>
 
-      <Stars />
+        {isTileQuestion ? (
+          <TilesModeGrid
+            allTiles={tileMap}
+            placedTileIds={selectedTileIndexes}
+            onTileClick={tileId => selectTile(tileId)}
+            isTileDisabled={isAnswered || isSubmitting}
+            isCelebrating={feedback?.result.isCorrect ?? false}
+            celebrationMode='bounce'
+            tilesPerRow={Math.max(4, Math.ceil(tileMap.size / 2))}
+            tileSizeClassName='text-2xl sm:text-3xl'
+            tileLang='ja'
+            answerRowClassName={getAnswerRowClassName('5rem')}
+            tilesWrapperKey={`${activeSession.sessionId}-${question.index}`}
+          />
+        ) : isMatchingQuestion ? (
+          <div className='grid gap-5 md:grid-cols-2'>
+            <div className='grid gap-2'>
+              {question.pairs.map(pair => {
+                const isSelected = selectedPairId === pair.id;
+                const optionId = mapping[pair.id];
+                const mappedLabel = question.options.find(option => option.id === optionId)?.label;
+                return (
+                  <button
+                    key={pair.id}
+                    type='button'
+                    disabled={isAnswered || isSubmitting}
+                    className={`rounded-2xl border-b-4 px-4 py-3 text-left transition ${
+                      isSelected
+                        ? 'border-(--main-color) bg-(--main-color)/10'
+                        : 'border-(--border-color) bg-(--card-color) hover:border-(--main-color)'
+                    }`}
+                    onClick={() => setSelectedPairId(pair.id)}
+                  >
+                    <span lang='ja' className='font-bold text-(--text-color)'>{pair.label}</span>
+                    <span className='mt-1 block text-sm text-(--secondary-color)'>
+                      {mappedLabel ?? '选择右侧释义'}
+                    </span>
+                  </button>
+                );
+              })}
+            </div>
+            <div className='grid gap-2'>
+              {question.options.map(option => (
+                <button
+                  key={option.id}
+                  type='button'
+                  disabled={!selectedPairId || isAnswered || isSubmitting}
+                  className='rounded-2xl border-b-4 border-(--border-color) bg-(--card-color) px-4 py-3 text-left text-(--text-color) transition hover:border-(--main-color) disabled:cursor-not-allowed disabled:opacity-50'
+                  onClick={() => selectMatchingOption(option.id)}
+                >
+                  {option.label}
+                </button>
+              ))}
+            </div>
+          </div>
+        ) : (
+          <div className='grid grid-cols-1 gap-3 sm:grid-cols-2 sm:gap-4'>
+            {question.options.map(option => {
+              const selected = selectedOptionId === option.id;
+              return (
+                <motion.button
+                  key={option.id}
+                  type='button'
+                  disabled={isAnswered || isSubmitting}
+                  whileTap={!isAnswered && !isSubmitting ? { scale: 0.97 } : undefined}
+                  className={`min-h-24 rounded-2xl border-b-4 px-5 py-4 text-left text-2xl transition sm:text-3xl ${
+                    selected
+                      ? 'border-(--main-color) bg-(--main-color)/10 text-(--text-color)'
+                      : 'border-(--border-color) bg-(--card-color) text-(--secondary-color) hover:border-(--main-color)'
+                  }`}
+                  onClick={() => selectOption(option.id)}
+                >
+                  {optionText(question, option.label)}
+                </motion.button>
+              );
+            })}
+          </div>
+        )}
+      </motion.div>
 
-      {isTileQuestion && !isAnswered && (
+      {requestError && <p className='text-center text-sm font-semibold text-rose-600'>{requestError}</p>}
+
+      {!isAnswered && (isTileQuestion || isMatchingQuestion) && (
         <GameBottomBar
           state='check'
-          onAction={checkTiles}
-          canCheck={selectedTileText.length === Array.from(question.answer).length}
-          actionLabel='检查'
+          onAction={() => {
+            if (!canCheck) return;
+            if (isTileQuestion) void submit({ tileIds: selectedTileIds });
+            if (isMatchingQuestion) void submit({ mapping });
+          }}
+          canCheck={canCheck && !isSubmitting}
           feedbackContent=''
+          actionLabel={isSubmitting ? '提交中…' : '确认答案'}
         />
       )}
 
       {feedback && (
         <GameBottomBar
-          state={feedback.correct ? 'correct' : 'wrong'}
-          onAction={nextQuestion}
+          state={feedback.result.isCorrect ? 'correct' : 'wrong'}
+          onAction={continueAfterFeedback}
           canCheck={false}
           hideRetry
+          feedbackTitle={feedback.result.isCorrect ? '答对了！' : '正确答案'}
+          feedbackContent={feedbackContent(feedback.result)}
           actionLabel='继续'
-          feedbackTitle={feedback.correct ? '正确' : '正确答案'}
-          feedbackContent={answerLabel(question)}
         />
       )}
     </div>
