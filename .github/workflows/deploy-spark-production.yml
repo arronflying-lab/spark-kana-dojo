@@ -48,8 +48,11 @@ jobs:
           NEXT_PUBLIC_KANA_DOJO_BASE_PATH: /kanadojo
           NEXT_PUBLIC_SUPABASE_URL: https://build.invalid
           SUPABASE_SERVICE_ROLE_KEY: build-placeholder
+          ANALYTICS_DISABLED: 'true'
+          NEXT_PUBLIC_SENTRY_DISABLED: 'true'
+          SENTRY_DISABLED: 'true'
           NODE_OPTIONS: --max-old-space-size=4096
-        run: npm run build
+        run: npm run clean && npm run build
 
       - name: Package runtime artifact
         run: |
@@ -60,10 +63,11 @@ jobs:
           # Copy the bundle contents. Copying the directory itself would create
           # release/.next/standalone/standalone and break server.js resolution.
           cp -a .next/standalone/. release/.next/standalone/
-          # Next standalone resolves static files relative to server.js.
-          # Keep them inside the standalone bundle instead of beside it.
+          # Next standalone resolves public files relative to server.js.
+          # Keep both public assets and static chunks inside the standalone
+          # bundle; placing public beside it makes /data-* return 404.
+          cp -a public release/.next/standalone/public
           cp -a .next/static release/.next/standalone/.next/static
-          cp -a public release/public
           printf '%s\n' '${{ github.sha }}' > release/RELEASE_SHA
           tar -czf kana-dojo-runtime.tgz -C release .
 
@@ -132,7 +136,7 @@ jobs:
           TMP_ENV="$(mktemp "$APP_DIR/.env.production.XXXXXX")"
           {
             printf '%s\n' "$SUPABASE_URL_LINE" "$SERVICE_KEY_LINE" "$SECRET_LINE"
-            printf '%s\n' 'KANA_DOJO_BASE_PATH=/kanadojo' 'NEXT_PUBLIC_KANA_DOJO_BASE_PATH=/kanadojo' 'PORT=3102' 'HOSTNAME=127.0.0.1'
+            printf '%s\n' 'KANA_DOJO_BASE_PATH=/kanadojo' 'NEXT_PUBLIC_KANA_DOJO_BASE_PATH=/kanadojo' 'ANALYTICS_DISABLED=true' 'SENTRY_DISABLED=true' 'PORT=3102' 'HOSTNAME=127.0.0.1'
           } > "$TMP_ENV"
           mv "$TMP_ENV" "$RUNTIME_ENV"
           chmod 600 "$RUNTIME_ENV"
@@ -148,8 +152,11 @@ jobs:
           mkdir -p "$BACKUP_DIR"
           if [ -d "$APP_DIR/.next/standalone" ]; then cp -a "$APP_DIR/.next/standalone" "$BACKUP_DIR/standalone"; fi
           if [ -d "$APP_DIR/.next/standalone/.next/static" ]; then cp -a "$APP_DIR/.next/standalone/.next/static" "$BACKUP_DIR/static"; fi
-          if [ -d "$APP_DIR/public" ]; then cp -a "$APP_DIR/public" "$BACKUP_DIR/public"; fi
+          if [ -d "$APP_DIR/.next/standalone/public" ]; then cp -a "$APP_DIR/.next/standalone/public" "$BACKUP_DIR/public"; fi
           if [ -f "$APP_DIR/RELEASE_SHA" ]; then cp -a "$APP_DIR/RELEASE_SHA" "$BACKUP_DIR/RELEASE_SHA"; fi
+          # Remove the previous runtime before extraction so stale hashed
+          # chunks cannot survive a clean build and mix with new HTML.
+          rm -rf "$APP_DIR/.next/standalone" "$APP_DIR/.next/static" "$APP_DIR/public"
           mkdir -p "$APP_DIR/.next"
           tar -xzf "$ARCHIVE" -C "$APP_DIR"
 
@@ -161,7 +168,7 @@ jobs:
             rm -rf "$APP_DIR/.next/standalone" "$APP_DIR/.next/static" "$APP_DIR/public"
             [ -d "$BACKUP_DIR/standalone" ] && cp -a "$BACKUP_DIR/standalone" "$APP_DIR/.next/standalone" || true
             [ -d "$BACKUP_DIR/static" ] && mkdir -p "$APP_DIR/.next/standalone/.next" && cp -a "$BACKUP_DIR/static" "$APP_DIR/.next/standalone/.next/static" || true
-            [ -d "$BACKUP_DIR/public" ] && cp -a "$BACKUP_DIR/public" "$APP_DIR/public" || true
+            [ -d "$BACKUP_DIR/public" ] && cp -a "$BACKUP_DIR/public" "$APP_DIR/.next/standalone/public" || true
             [ -f "$BACKUP_DIR/RELEASE_SHA" ] && cp -a "$BACKUP_DIR/RELEASE_SHA" "$APP_DIR/RELEASE_SHA" || true
             pm2 restart "$PM2_APP" --update-env || true
           }

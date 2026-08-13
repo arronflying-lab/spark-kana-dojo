@@ -3,6 +3,7 @@ import * as Sentry from '@sentry/nextjs';
 
 Sentry.init({
   dsn: 'https://a6f82883d78e424ee7b578556b78743d@o4511608063197184.ingest.us.sentry.io/4511608067981312',
+  enabled: process.env.NEXT_PUBLIC_SENTRY_DISABLED !== 'true',
   // Performance rescue: Sentry Replay is intentionally disabled for now.
   // integrations: [Sentry.replayIntegration()],
   tracesSampleRate: 0.1,
