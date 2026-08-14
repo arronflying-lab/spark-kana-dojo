@@ -111,11 +111,54 @@ jobs:
       PAGE_URL: http://127.0.0.1:3102/kanadojo/spark
       RELEASE_SHA: ${{ needs.build-runtime.outputs.release_sha }}
     steps:
-      - name: Download release artifact
-        uses: actions/download-artifact@v4
-        with:
-          name: kana-dojo-runtime
-          path: ${{ runner.temp }}/kana-dojo-release
+      - name: Download release artifact with retry and digest verification
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          command -v curl unzip sha256sum node >/dev/null
+          dest="$RUNNER_TEMP/kana-dojo-release"
+          metadata="$RUNNER_TEMP/kana-dojo-artifact.json"
+          headers="$RUNNER_TEMP/kana-dojo-artifact.headers"
+          archive_zip="$RUNNER_TEMP/kana-dojo-runtime.zip"
+          mkdir -p "$dest"
+
+          curl -fsS --retry 8 --retry-all-errors --retry-delay 5 --retry-max-time 180 \
+            -H "Authorization: Bearer $GITHUB_TOKEN" \
+            -H "Accept: application/vnd.github+json" \
+            "$GITHUB_API_URL/repos/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID/artifacts?name=kana-dojo-runtime" \
+            -o "$metadata"
+
+          readarray -t artifact_meta < <(node - "$metadata" <<'NODE'
+          const fs = require("node:fs");
+          const payload = JSON.parse(fs.readFileSync(process.argv[2], "utf8"));
+          const artifact = (payload.artifacts || []).find(
+            (item) => item.name === "kana-dojo-runtime" && !item.expired,
+          );
+          if (!artifact) process.exit(1);
+          process.stdout.write(`${artifact.id}\n${artifact.digest}\n`);
+          NODE
+          )
+          test "${#artifact_meta[@]}" = 2
+          artifact_id="${artifact_meta[0]}"
+          artifact_digest="${artifact_meta[1]#sha256:}"
+          api_url="$GITHUB_API_URL/repos/$GITHUB_REPOSITORY/actions/artifacts/$artifact_id/zip"
+
+          # Resolve the signed blob URL separately so the GitHub token is not
+          # forwarded to the storage host on redirect.
+          curl -fsS --retry 8 --retry-all-errors --retry-delay 5 --retry-max-time 180 \
+            -D "$headers" -o /dev/null \
+            -H "Authorization: Bearer $GITHUB_TOKEN" \
+            -H "Accept: application/vnd.github+json" \
+            "$api_url"
+          download_url="$(awk 'BEGIN { IGNORECASE=1 } /^location:/ { sub("\r$", ""); print substr($0, 11); exit }' "$headers")"
+          test -n "$download_url"
+
+          curl -fL --retry 12 --retry-all-errors --retry-delay 10 --retry-max-time 900 \
+            "$download_url" -o "$archive_zip"
+          printf '%s  %s\n' "$artifact_digest" "$archive_zip" | sha256sum -c -
+          unzip -q -o "$archive_zip" -d "$dest"
+          test -s "$dest/kana-dojo-runtime.tgz"
 
       - name: Verify server and release artifact
         run: |
