@@ -123,7 +123,7 @@ jobs:
           archive_zip="$RUNNER_TEMP/kana-dojo-runtime.zip"
           mkdir -p "$dest"
 
-          curl -fsS --retry 8 --retry-all-errors --retry-delay 5 --retry-max-time 180 \
+          curl -fsS --connect-timeout 15 --max-time 60 --retry 8 --retry-all-errors --retry-delay 5 --retry-max-time 180 \
             -H "Authorization: Bearer $GITHUB_TOKEN" \
             -H "Accept: application/vnd.github+json" \
             "$GITHUB_API_URL/repos/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID/artifacts?name=kana-dojo-runtime" \
@@ -146,7 +146,7 @@ jobs:
 
           # Resolve the signed blob URL separately so the GitHub token is not
           # forwarded to the storage host on redirect.
-          curl -fsS --retry 8 --retry-all-errors --retry-delay 5 --retry-max-time 180 \
+          curl -fsS --connect-timeout 15 --max-time 60 --retry 8 --retry-all-errors --retry-delay 5 --retry-max-time 180 \
             -D "$headers" -o /dev/null \
             -H "Authorization: Bearer $GITHUB_TOKEN" \
             -H "Accept: application/vnd.github+json" \
@@ -154,7 +154,8 @@ jobs:
           download_url="$(awk 'BEGIN { IGNORECASE=1 } /^location:/ { sub("\r$", ""); print substr($0, 11); exit }' "$headers")"
           test -n "$download_url"
 
-          curl -fL --retry 12 --retry-all-errors --retry-delay 10 --retry-max-time 900 \
+          curl -fL --connect-timeout 15 --max-time 900 --speed-limit 1024 --speed-time 30 \
+            --retry 12 --retry-all-errors --retry-delay 10 --retry-max-time 900 \
             "$download_url" -o "$archive_zip"
           printf '%s  %s\n' "$artifact_digest" "$archive_zip" | sha256sum -c -
           unzip -q -o "$archive_zip" -d "$dest"
