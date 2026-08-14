@@ -12,7 +12,7 @@ on:
         type: string
 
 permissions:
-  contents: read
+  contents: write
   actions: read
 
 concurrency:
@@ -30,6 +30,8 @@ jobs:
     timeout-minutes: 25
     outputs:
       release_sha: ${{ steps.release.outputs.sha }}
+      release_digest: ${{ steps.release.outputs.digest }}
+      release_tag: ${{ steps.release_asset.outputs.tag }}
     steps:
       - name: Checkout requested release
         uses: actions/checkout@v4
@@ -82,15 +84,23 @@ jobs:
           git rev-parse HEAD > release/RELEASE_SHA
           echo "sha=$(cat release/RELEASE_SHA)" >> "$GITHUB_OUTPUT"
           tar -czf kana-dojo-runtime.tgz -C release .
+          echo "digest=$(sha256sum kana-dojo-runtime.tgz | awk '{print $1}')" >> "$GITHUB_OUTPUT"
           test -s kana-dojo-runtime.tgz
 
-      - name: Upload runtime artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: kana-dojo-runtime
-          path: kana-dojo-runtime.tgz
-          if-no-files-found: error
-          retention-days: 7
+      - name: Publish temporary release asset
+        id: release_asset
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          tag="deploy-kana-dojo-${GITHUB_RUN_ID}"
+          gh release create "$tag" kana-dojo-runtime.tgz \
+            --repo "$GITHUB_REPOSITORY" \
+            --target "$GITHUB_SHA" \
+            --title "Temporary KanaDojo deployment $GITHUB_RUN_ID" \
+            --notes "Temporary runtime transfer asset; deleted after deployment." \
+            --prerelease
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
 
   install-runtime:
     name: Install runtime on Shanghai
@@ -110,56 +120,40 @@ jobs:
       HEALTH_URL: http://127.0.0.1:3102/kanadojo/api/healthcheck
       PAGE_URL: http://127.0.0.1:3102/kanadojo/spark
       RELEASE_SHA: ${{ needs.build-runtime.outputs.release_sha }}
+      RELEASE_DIGEST: ${{ needs.build-runtime.outputs.release_digest }}
+      RELEASE_TAG: ${{ needs.build-runtime.outputs.release_tag }}
     steps:
-      - name: Download release artifact with retry and digest verification
+      - name: Download temporary release asset with retry and digest verification
         env:
           GITHUB_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
-          command -v curl unzip sha256sum node >/dev/null
+          command -v curl sha256sum awk >/dev/null
           dest="$RUNNER_TEMP/kana-dojo-release"
-          metadata="$RUNNER_TEMP/kana-dojo-artifact.json"
           headers="$RUNNER_TEMP/kana-dojo-artifact.headers"
-          archive_zip="$RUNNER_TEMP/kana-dojo-runtime.zip"
+          archive="$dest/kana-dojo-runtime.tgz"
           mkdir -p "$dest"
+          asset_url="https://github.com/$GITHUB_REPOSITORY/releases/download/$RELEASE_TAG/kana-dojo-runtime.tgz"
 
-          curl -fsS --connect-timeout 15 --max-time 60 --retry 8 --retry-all-errors --retry-delay 5 --retry-max-time 180 \
-            -H "Authorization: Bearer $GITHUB_TOKEN" \
-            -H "Accept: application/vnd.github+json" \
-            "$GITHUB_API_URL/repos/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID/artifacts?name=kana-dojo-runtime" \
-            -o "$metadata"
-
-          readarray -t artifact_meta < <(node - "$metadata" <<'NODE'
-          const fs = require("node:fs");
-          const payload = JSON.parse(fs.readFileSync(process.argv[2], "utf8"));
-          const artifact = (payload.artifacts || []).find(
-            (item) => item.name === "kana-dojo-runtime" && !item.expired,
-          );
-          if (!artifact) process.exit(1);
-          process.stdout.write(`${artifact.id}\n${artifact.digest}\n`);
-          NODE
-          )
-          test "${#artifact_meta[@]}" = 2
-          artifact_id="${artifact_meta[0]}"
-          artifact_digest="${artifact_meta[1]#sha256:}"
-          api_url="$GITHUB_API_URL/repos/$GITHUB_REPOSITORY/actions/artifacts/$artifact_id/zip"
-
-          # Resolve the signed blob URL separately so the GitHub token is not
+          # Resolve the release CDN URL separately so the GitHub token is not
           # forwarded to the storage host on redirect.
-          curl -fsS --connect-timeout 15 --max-time 60 --retry 8 --retry-all-errors --retry-delay 5 --retry-max-time 180 \
-            -D "$headers" -o /dev/null \
-            -H "Authorization: Bearer $GITHUB_TOKEN" \
-            -H "Accept: application/vnd.github+json" \
-            "$api_url"
-          download_url="$(awk 'BEGIN { IGNORECASE=1 } /^location:/ { sub("\r$", ""); print substr($0, 11); exit }' "$headers")"
-          test -n "$download_url"
-
-          curl -fL --connect-timeout 15 --max-time 900 --speed-limit 1024 --speed-time 30 \
-            --retry 12 --retry-all-errors --retry-delay 10 --retry-max-time 900 \
-            "$download_url" -o "$archive_zip"
-          printf '%s  %s\n' "$artifact_digest" "$archive_zip" | sha256sum -c -
-          unzip -q -o "$archive_zip" -d "$dest"
-          test -s "$dest/kana-dojo-runtime.tgz"
+          status="$(curl -sS --connect-timeout 15 --max-time 60 --retry 8 --retry-all-errors --retry-delay 5 --retry-max-time 180 \
+            -D "$headers" -o /dev/null -w '%{http_code}' \
+            -H "Authorization: Bearer $GITHUB_TOKEN" "$asset_url")"
+          if [[ "$status" == 2* ]]; then
+            curl -fL --connect-timeout 15 --max-time 900 --speed-limit 1024 --speed-time 30 \
+              --retry 12 --retry-all-errors --retry-delay 10 --retry-max-time 900 \
+              -H "Authorization: Bearer $GITHUB_TOKEN" "$asset_url" -o "$archive"
+          else
+            test "$status" = 302 || test "$status" = 301
+            download_url="$(awk 'BEGIN { IGNORECASE=1 } /^location:/ { sub("\r$", ""); print substr($0, 11); exit }' "$headers")"
+            test -n "$download_url"
+            curl -fL --connect-timeout 15 --max-time 900 --speed-limit 1024 --speed-time 30 \
+              --retry 12 --retry-all-errors --retry-delay 10 --retry-max-time 900 \
+              "$download_url" -o "$archive"
+          fi
+          printf '%s  %s\n' "$RELEASE_DIGEST" "$archive" | sha256sum -c -
+          test -s "$archive"
 
       - name: Verify server and release artifact
         run: |
@@ -233,3 +227,21 @@ jobs:
           test "$(curl -fsS --max-time 10 -o /dev/null -w '%{http_code}' "$PAGE_URL")" = 200
           trap - ERR
           echo "KanaDojo runtime healthy at $(cat "$APP_DIR/RELEASE_SHA")"
+
+  cleanup-release-asset:
+    name: Remove temporary release asset
+    needs: [build-runtime, install-runtime]
+    if: ${{ always() && needs.build-runtime.result == 'success' }}
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    env:
+      RELEASE_TAG: ${{ needs.build-runtime.outputs.release_tag }}
+    steps:
+      - name: Delete temporary release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          test -n "$RELEASE_TAG"
+          gh release delete "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" --yes --cleanup-tag
