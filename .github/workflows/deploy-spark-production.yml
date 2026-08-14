@@ -95,7 +95,9 @@ jobs:
   install-runtime:
     name: Install runtime on Shanghai
     needs: build-runtime
-    runs-on: [self-hosted, linux, shanghai-prod]
+    # This repository's dedicated runner is intentionally separate from the
+    # portal runner. It only installs an already-built artifact.
+    runs-on: [self-hosted, linux, shanghai-kana-dojo]
     timeout-minutes: 15
     environment:
       name: production
