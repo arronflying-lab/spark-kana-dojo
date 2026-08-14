@@ -10,6 +10,12 @@ on:
         required: true
         default: main
         type: string
+      deploy_mode:
+        description: Runtime transfer mode
+        required: true
+        default: artifact
+        type: choice
+        options: [artifact, local_build]
 
 permissions:
   contents: write
@@ -26,6 +32,7 @@ env:
 jobs:
   build-runtime:
     name: Build runtime off production
+    if: ${{ inputs.deploy_mode != 'local_build' }}
     runs-on: ubuntu-latest
     timeout-minutes: 25
     outputs:
@@ -104,6 +111,7 @@ jobs:
 
   install-runtime:
     name: Install runtime on Shanghai
+    if: ${{ inputs.deploy_mode != 'local_build' }}
     needs: build-runtime
     # This repository's dedicated runner is intentionally separate from the
     # portal runner. It only installs an already-built artifact.
@@ -227,6 +235,127 @@ jobs:
           test "$(curl -fsS --max-time 10 -o /dev/null -w '%{http_code}' "$PAGE_URL")" = 200
           trap - ERR
           echo "KanaDojo runtime healthy at $(cat "$APP_DIR/RELEASE_SHA")"
+
+  deploy-local-build:
+    name: Build and install on Shanghai (fallback)
+    if: ${{ inputs.deploy_mode == 'local_build' }}
+    runs-on: [self-hosted, linux, shanghai-kana-dojo]
+    timeout-minutes: 30
+    environment:
+      name: production
+      url: https://eju.japanedupath.com/kanadojo/spark
+    env:
+      APP_DIR: /var/www/spark-kana-dojo
+      MAIN_APP_DIR: /var/www/japanedupath-internal
+      PM2_APP: spark-kana-dojo
+      RUNTIME_ENV: /var/www/spark-kana-dojo/.env.production
+      HEALTH_URL: http://127.0.0.1:3102/kanadojo/api/healthcheck
+      PAGE_URL: http://127.0.0.1:3102/kanadojo/spark
+      KANA_DOJO_BASE_PATH: /kanadojo
+      NEXT_PUBLIC_KANA_DOJO_BASE_PATH: /kanadojo
+      NODE_OPTIONS: --max-old-space-size=3072
+    steps:
+      - name: Checkout requested release
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.deploy_ref }}
+          fetch-depth: 0
+
+      - name: Use Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+
+      - name: Validate and build locally before touching production
+        run: |
+          set -euo pipefail
+          npm ci --ignore-scripts --no-audit --no-fund
+          node scripts/generate-commit-info.mjs
+          npx tsc --noEmit --pretty false --incremental
+          npm test -- --run features/SparkIntegration/__tests__/mappers.test.ts features/SparkIntegration/__tests__/portalVocabQuest.test.ts
+          npm exec eslint features/SparkIntegration app/[locale]/vocabulary/spark/page.tsx -- --max-warnings=0
+          npm run clean
+          npm run build
+          test -f .next/standalone/server.js
+
+      - name: Prepare runtime-only environment
+        run: |
+          set -euo pipefail
+          MAIN_ENV="$MAIN_APP_DIR/.env.production"
+          read_value() {
+            local name="$1"
+            grep -E "^${name}=" "$MAIN_ENV" | tail -n 1 | cut -d= -f2-
+          }
+          url="$(read_value NEXT_PUBLIC_SUPABASE_URL || true)"
+          [ -n "$url" ] || url="$(read_value SUPABASE_URL || true)"
+          service_key="$(read_value SUPABASE_SERVICE_ROLE_KEY || true)"
+          handoff_secret="$(read_value SPARK_KANA_DOJO_HANDOFF_SECRET || true)"
+          test -n "$url" && test -n "$service_key" && test -n "$handoff_secret"
+          umask 077
+          mkdir -p "$APP_DIR"
+          tmp_env="$(mktemp "$APP_DIR/.env.production.XXXXXX")"
+          {
+            printf 'SUPABASE_URL=%s\n' "$url"
+            printf 'SUPABASE_SERVICE_ROLE_KEY=%s\n' "$service_key"
+            printf 'SPARK_KANA_DOJO_HANDOFF_SECRET=%s\n' "$handoff_secret"
+            printf '%s\n' 'KANA_DOJO_BASE_PATH=/kanadojo' 'NEXT_PUBLIC_KANA_DOJO_BASE_PATH=/kanadojo' 'ANALYTICS_DISABLED=true' 'SENTRY_DISABLED=true' 'PORT=3102' 'HOSTNAME=127.0.0.1'
+          } > "$tmp_env"
+          chmod 600 "$tmp_env"
+          mv "$tmp_env" "$RUNTIME_ENV"
+
+      - name: Package, install, and verify with rollback
+        run: |
+          set -euo pipefail
+          release_dir="$RUNNER_TEMP/kana-dojo-local-release"
+          archive="$RUNNER_TEMP/kana-dojo-local-runtime.tgz"
+          rm -rf "$release_dir" "$archive"
+          mkdir -p "$release_dir/.next/standalone/.next"
+          cp -a .next/standalone/. "$release_dir/.next/standalone/"
+          cp -a public "$release_dir/.next/standalone/public"
+          cp -a .next/static "$release_dir/.next/standalone/.next/static"
+          git rev-parse HEAD > "$release_dir/RELEASE_SHA"
+          tar -czf "$archive" -C "$release_dir" .
+          test -s "$archive"
+          test -d "$MAIN_APP_DIR"
+          test -f "$MAIN_APP_DIR/.env.production"
+          command -v node pm2 curl tar >/dev/null
+
+          backup="$APP_DIR/.kana-dojo-previous"
+          test "$backup" = '/var/www/spark-kana-dojo/.kana-dojo-previous'
+          rm -rf "$backup"
+          mkdir -p "$backup"
+          if [ -d "$APP_DIR/.next/standalone" ]; then cp -a "$APP_DIR/.next/standalone" "$backup/standalone"; fi
+          if [ -f "$APP_DIR/RELEASE_SHA" ]; then cp -a "$APP_DIR/RELEASE_SHA" "$backup/RELEASE_SHA"; fi
+          rollback() {
+            echo '::warning::KanaDojo local-build health check failed; restoring previous runtime'
+            rm -rf "$APP_DIR/.next/standalone"
+            [ -d "$backup/standalone" ] && cp -a "$backup/standalone" "$APP_DIR/.next/standalone" || true
+            [ -f "$backup/RELEASE_SHA" ] && cp -a "$backup/RELEASE_SHA" "$APP_DIR/RELEASE_SHA" || true
+            pm2 restart "$PM2_APP" --update-env || true
+          }
+          trap rollback ERR
+          rm -rf "$APP_DIR/.next/standalone"
+          mkdir -p "$APP_DIR/.next"
+          tar -xzf "$archive" -C "$APP_DIR"
+          set -a
+          . "$RUNTIME_ENV"
+          set +a
+          if pm2 describe "$PM2_APP" >/dev/null 2>&1; then
+            pm2 restart "$PM2_APP" --update-env
+          else
+            pm2 start .next/standalone/server.js --name "$PM2_APP" --cwd "$APP_DIR" --update-env
+          fi
+          pm2 save
+          for attempt in 1 2 3 4 5 6; do
+            if curl -fsS --max-time 10 "$HEALTH_URL" >/tmp/kana-dojo-health.json; then break; fi
+            [ "$attempt" = 6 ] || sleep 2
+          done
+          test "$(cat /tmp/kana-dojo-health.json)" = '{"status":"ok"}'
+          test "$(curl -fsS --max-time 10 -o /dev/null -w '%{http_code}' "$PAGE_URL")" = 200
+          trap - ERR
+          rm -rf "$backup"
+          echo "KanaDojo local-build runtime healthy at $(cat "$APP_DIR/RELEASE_SHA")"
 
   cleanup-release-asset:
     name: Remove temporary release asset
