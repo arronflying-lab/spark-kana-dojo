@@ -261,15 +261,11 @@ jobs:
           ref: ${{ inputs.deploy_ref }}
           fetch-depth: 0
 
-      - name: Use Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: ${{ env.NODE_VERSION }}
-          cache: npm
-
       - name: Validate and build locally before touching production
         run: |
           set -euo pipefail
+          command -v node npm >/dev/null
+          test "$(node -p 'process.versions.node.split(".")[0]')" = "$NODE_VERSION"
           npm ci --ignore-scripts --no-audit --no-fund
           node scripts/generate-commit-info.mjs
           npx tsc --noEmit --pretty false --incremental
