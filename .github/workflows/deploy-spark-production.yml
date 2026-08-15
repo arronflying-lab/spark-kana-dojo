@@ -240,7 +240,9 @@ jobs:
     name: Build and install on Shanghai (fallback)
     if: ${{ inputs.deploy_mode == 'local_build' }}
     runs-on: [self-hosted, linux, shanghai-kana-dojo]
-    timeout-minutes: 30
+    # The 4 GB host needs ~25 minutes for the build alone; 30 minutes cut the
+    # 2026-08-15 deploy off mid-install. Keep headroom for install + verify.
+    timeout-minutes: 60
     environment:
       name: production
       url: https://eju.japanedupath.com/kanadojo/spark
