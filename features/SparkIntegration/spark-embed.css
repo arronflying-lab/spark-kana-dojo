@@ -1,0 +1,34 @@
+.spark-learning-hub-embedded,
+[data-spark-embed='true'] {
+  --background-color: #f7f4ef;
+  --card-color: #ffffff;
+  --border-color: #dfe5f2;
+  --text-color: #1f2d4d;
+  --secondary-color: #667085;
+  --main-color: #2a5be6;
+  --main-color-accent: #1747c5;
+  --secondary-color-accent: #e9eefc;
+  min-height: 100%;
+  color: var(--text-color);
+  background: var(--background-color);
+}
+
+.spark-learning-hub-embedded {
+  max-width: none;
+  padding: 18px 24px 72px;
+}
+
+.spark-learning-hub-embedded [lang='ja'] {
+  font-family: 'Shippori Mincho', serif;
+}
+
+.spark-learning-hub-embedded button,
+.spark-learning-hub-embedded [role='button'] {
+  font-family: 'Zen Maru Gothic', sans-serif;
+}
+
+@media (max-width: 560px) {
+  .spark-learning-hub-embedded {
+    padding: 12px 14px 92px;
+  }
+}
