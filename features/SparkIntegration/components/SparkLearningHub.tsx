@@ -4,6 +4,8 @@ import { useEffect, useState } from 'react';
 import type { VocabLevel } from '@/entities/vocabulary';
 import SparkGrammarStudy from './SparkGrammarStudy';
 import SparkVocabularyGame from './SparkVocabularyGame';
+import SparkEmbedBridge from './SparkEmbedBridge';
+import '../spark-embed.css';
 
 type LearningMode = 'vocabulary' | 'grammar';
 
@@ -28,6 +30,15 @@ export default function SparkLearningHub() {
   const [authState, setAuthState] = useState<'loading' | 'ready' | 'error'>(
     () => (readHandoffFromHash() ? 'loading' : 'ready'),
   );
+  const [isEmbedded, setIsEmbedded] = useState(false);
+
+  useEffect(() => {
+    // The query string is browser-only state; defer it until after hydration.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    setIsEmbedded(
+      new URLSearchParams(window.location.search).get('embed') === 'spark',
+    );
+  }, []);
 
   useEffect(() => {
     const handoff = readHandoffFromHash();
@@ -80,30 +91,36 @@ export default function SparkLearningHub() {
   }
 
   return (
-    <main className='mx-auto flex w-full max-w-6xl flex-col gap-6 px-4 py-6 md:px-6 md:py-8'>
-      <header className='rounded-3xl border border-(--border-color) bg-(--card-color) p-6 shadow-sm'>
-        <p className='text-sm font-semibold tracking-[0.18em] text-(--secondary-color) uppercase'>
-          Spark Learning
-        </p>
-        <h1 className='mt-2 text-3xl font-bold text-(--text-color)'>
-          星火日语闯关
-        </h1>
-        <p className='mt-2 text-(--secondary-color)'>
-          词汇与语法分开学习；词汇题使用 KanaDojo 的原生游戏框架和星火词库。
-        </p>
-        <p className='mt-3 text-sm text-(--secondary-color)'>
-          本模块基于{' '}
-          <a
-            className='font-semibold text-(--main-color) underline underline-offset-4'
-            href='https://github.com/arronflying-lab/spark-kana-dojo'
-            target='_blank'
-            rel='noreferrer'
-          >
-            KanaDojo 修改后的完整源代码
-          </a>
-          ，依照 AGPL-3.0-or-later 提供。
-        </p>
-      </header>
+    <main
+      data-spark-embed={isEmbedded ? 'true' : undefined}
+      className={`spark-learning-hub mx-auto flex w-full flex-col gap-6 ${isEmbedded ? 'spark-learning-hub-embedded' : 'max-w-6xl px-4 py-6 md:px-6 md:py-8'}`}
+    >
+      {isEmbedded && <SparkEmbedBridge />}
+      {!isEmbedded && (
+        <header className='rounded-3xl border border-(--border-color) bg-(--card-color) p-6 shadow-sm'>
+          <p className='text-sm font-semibold tracking-[0.18em] text-(--secondary-color) uppercase'>
+            Spark Learning
+          </p>
+          <h1 className='mt-2 text-3xl font-bold text-(--text-color)'>
+            星火日语闯关
+          </h1>
+          <p className='mt-2 text-(--secondary-color)'>
+            词汇与语法分开学习；词汇题使用 KanaDojo 的原生游戏框架和星火词库。
+          </p>
+          <p className='mt-3 text-sm text-(--secondary-color)'>
+            本模块基于{' '}
+            <a
+              className='font-semibold text-(--main-color) underline underline-offset-4'
+              href='https://github.com/arronflying-lab/spark-kana-dojo'
+              target='_blank'
+              rel='noreferrer'
+            >
+              KanaDojo 修改后的完整源代码
+            </a>
+            ，依照 AGPL-3.0-or-later 提供。
+          </p>
+        </header>
+      )}
 
       <nav
         className='flex flex-wrap gap-2 rounded-2xl border border-(--border-color) bg-(--card-color) p-2'
@@ -131,8 +148,13 @@ export default function SparkLearningHub() {
         ))}
       </nav>
 
-      <section className='flex flex-wrap items-center gap-2' aria-label='JLPT 等级'>
-        <span className='mr-2 text-sm font-semibold text-(--secondary-color)'>等级</span>
+      <section
+        className='flex flex-wrap items-center gap-2'
+        aria-label='JLPT 等级'
+      >
+        <span className='mr-2 text-sm font-semibold text-(--secondary-color)'>
+          等级
+        </span>
         {LEVELS.map(item => (
           <button
             key={item}
