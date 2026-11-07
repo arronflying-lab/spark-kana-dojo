@@ -19,13 +19,15 @@ type FeedbackState = {
 };
 
 function freshRequestId() {
-  return typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function'
+  return typeof crypto !== 'undefined' &&
+    typeof crypto.randomUUID === 'function'
     ? crypto.randomUUID()
     : `00000000-0000-4000-8000-${Math.random().toString(16).slice(2).padEnd(12, '0').slice(0, 12)}`;
 }
 
 function optionText(question: SparkQuestQuestion, label: string) {
-  if (question.type === 'meaning_choice' || question.type === 'context_choice') return label;
+  if (question.type === 'meaning_choice' || question.type === 'context_choice')
+    return label;
   return <span lang='ja'>{label}</span>;
 }
 
@@ -83,7 +85,12 @@ export default function SparkVocabularyChallenge({
 
   const question = activeSession.currentQuestion;
   const tileMap = useMemo(
-    () => new Map((question?.type === 'reading_tiles' ? question.tiles : []).map((tile, index) => [index, tile.label])),
+    () =>
+      new Map(
+        (question?.type === 'reading_tiles' ? question.tiles : []).map(
+          (tile, index) => [index, tile.label],
+        ),
+      ),
     [question],
   );
 
@@ -91,12 +98,16 @@ export default function SparkVocabularyChallenge({
     if (!question || feedback || isSubmitting) return;
     setRequestError(null);
     setIsSubmitting(true);
-    const requestId = requestIds.current.get(question.index) ?? freshRequestId();
+    const requestId =
+      requestIds.current.get(question.index) ?? freshRequestId();
     requestIds.current.set(question.index, requestId);
     try {
       const result = await onAnswer(
         answer,
-        Math.min(600000, Math.max(0, Math.round(Date.now() - startedAt.current))),
+        Math.min(
+          600000,
+          Math.max(0, Math.round(Date.now() - startedAt.current)),
+        ),
         requestId,
       );
       const nextSession: SparkQuestSession = {
@@ -105,7 +116,9 @@ export default function SparkVocabularyChallenge({
       };
       setFeedback({ askedQuestion: question, result, nextSession });
     } catch (error) {
-      setRequestError(error instanceof Error ? error.message : '答案没有保存，请重试。');
+      setRequestError(
+        error instanceof Error ? error.message : '答案没有保存，请重试。',
+      );
     } finally {
       setIsSubmitting(false);
     }
@@ -138,16 +151,23 @@ export default function SparkVocabularyChallenge({
           animate={{ opacity: 1, scale: 1 }}
           className='flex flex-col items-center gap-3'
         >
-          <p className='text-5xl' aria-hidden='true'>{passed ? '🎉' : '💪'}</p>
+          <p className='text-5xl' aria-hidden='true'>
+            {passed ? '🎉' : '💪'}
+          </p>
           <h2 className='text-3xl font-bold text-(--text-color)'>
             {passed ? '本关通过！' : '这次差一点，再来一次。'}
           </h2>
           <p className='text-(--secondary-color)'>
-            答对 {nextSession.correctCount} / {nextSession.questionCount} 题 · 获得 {nextSession.xpAwarded} XP
+            答对 {nextSession.correctCount} / {nextSession.questionCount} 题 ·
+            获得 {nextSession.xpAwarded} XP
           </p>
           {passed && (
-            <p className='text-amber-500' aria-label={`${nextSession.stars ?? 0} 星`}>
-              {'★'.repeat(nextSession.stars ?? 0)}{'☆'.repeat(Math.max(0, 3 - (nextSession.stars ?? 0)))}
+            <p
+              className='text-amber-500'
+              aria-label={`${nextSession.stars ?? 0} 星`}
+            >
+              {'★'.repeat(nextSession.stars ?? 0)}
+              {'☆'.repeat(Math.max(0, 3 - (nextSession.stars ?? 0)))}
             </p>
           )}
         </motion.div>
@@ -161,7 +181,8 @@ export default function SparkVocabularyChallenge({
                   <span lang='ja' className='font-semibold text-(--text-color)'>
                     {item.headword}（{item.reading}）
                   </span>
-                  {' · '}{item.meaningZh}
+                  {' · '}
+                  {item.meaningZh}
                 </li>
               ))}
             </ul>
@@ -183,7 +204,11 @@ export default function SparkVocabularyChallenge({
     return (
       <div className='flex min-h-[58dvh] flex-col items-center justify-center gap-4 text-center text-(--secondary-color)'>
         <p>这次会话没有可继续的题目。</p>
-        <button type='button' className='font-semibold text-(--main-color) underline' onClick={onExit}>
+        <button
+          type='button'
+          className='font-semibold text-(--main-color) underline'
+          onClick={onExit}
+        >
           返回单词路径
         </button>
       </div>
@@ -193,7 +218,9 @@ export default function SparkVocabularyChallenge({
   if (question.type === 'reading_input') {
     return (
       <div className='flex min-h-[58dvh] flex-col items-center justify-center gap-4 px-5 text-center text-(--secondary-color)'>
-        <h2 className='text-2xl font-bold text-(--text-color)'>旧版输入题已停用</h2>
+        <h2 className='text-2xl font-bold text-(--text-color)'>
+          旧版输入题已停用
+        </h2>
         <p>为保证练习方式一致，请结束这个旧会话后从单词路径重新开始。</p>
         <button
           type='button'
@@ -210,7 +237,9 @@ export default function SparkVocabularyChallenge({
   const displaySession = feedback?.nextSession ?? activeSession;
   const isTileQuestion = question.type === 'reading_tiles';
   const isMatchingQuestion = question.type === 'matching';
-  const selectedTileIds = selectedTileIndexes.map(index => question.type === 'reading_tiles' ? question.tiles[index]?.id ?? '' : '');
+  const selectedTileIds = selectedTileIndexes.map(index =>
+    question.type === 'reading_tiles' ? (question.tiles[index]?.id ?? '') : '',
+  );
   const canCheck = isTileQuestion
     ? selectedTileIds.length === question.answerLength
     : isMatchingQuestion
@@ -236,7 +265,10 @@ export default function SparkVocabularyChallenge({
     if (!selectedPairId || isAnswered || isSubmitting) return;
     setMapping(current => {
       const withoutDuplicate = Object.fromEntries(
-        Object.entries(current).filter(([pairId, mappedOption]) => pairId === selectedPairId || mappedOption !== optionId),
+        Object.entries(current).filter(
+          ([pairId, mappedOption]) =>
+            pairId === selectedPairId || mappedOption !== optionId,
+        ),
       );
       return { ...withoutDuplicate, [selectedPairId]: optionId };
     });
@@ -248,8 +280,14 @@ export default function SparkVocabularyChallenge({
         <p className='text-xl font-bold text-(--text-color) sm:text-2xl'>
           第 {question.index + 1} / {displaySession.questionCount} 题
         </p>
-        <p className='text-2xl tracking-wide text-rose-500' aria-label={`剩余 ${displaySession.hearts} 颗心`}>
-          {'♥'.repeat(displaySession.hearts)}{'♡'.repeat(Math.max(0, displaySession.maxHearts - displaySession.hearts))}
+        <p
+          className='text-2xl tracking-wide text-rose-500'
+          aria-label={`剩余 ${displaySession.hearts} 颗心`}
+        >
+          {'♥'.repeat(displaySession.hearts)}
+          {'♡'.repeat(
+            Math.max(0, displaySession.maxHearts - displaySession.hearts),
+          )}
         </p>
       </header>
 
@@ -266,7 +304,10 @@ export default function SparkVocabularyChallenge({
         animate={{ opacity: 1, y: 0 }}
         className='flex flex-col gap-5'
       >
-        <p className='text-center text-3xl font-semibold leading-relaxed text-(--text-color) sm:text-5xl' lang={question.type === 'context_choice' ? 'ja' : undefined}>
+        <p
+          className='text-center text-3xl leading-relaxed font-semibold text-(--text-color) sm:text-5xl'
+          lang={question.type === 'context_choice' ? 'ja' : undefined}
+        >
           {question.prompt}
         </p>
 
@@ -290,7 +331,9 @@ export default function SparkVocabularyChallenge({
               {question.pairs.map(pair => {
                 const isSelected = selectedPairId === pair.id;
                 const optionId = mapping[pair.id];
-                const mappedLabel = question.options.find(option => option.id === optionId)?.label;
+                const mappedLabel = question.options.find(
+                  option => option.id === optionId,
+                )?.label;
                 return (
                   <button
                     key={pair.id}
@@ -303,7 +346,9 @@ export default function SparkVocabularyChallenge({
                     }`}
                     onClick={() => setSelectedPairId(pair.id)}
                   >
-                    <span lang='ja' className='font-bold text-(--text-color)'>{pair.label}</span>
+                    <span lang='ja' className='font-bold text-(--text-color)'>
+                      {pair.label}
+                    </span>
                     <span className='mt-1 block text-sm text-(--secondary-color)'>
                       {mappedLabel ?? '选择右侧释义'}
                     </span>
@@ -334,7 +379,9 @@ export default function SparkVocabularyChallenge({
                   key={option.id}
                   type='button'
                   disabled={isAnswered || isSubmitting}
-                  whileTap={!isAnswered && !isSubmitting ? { scale: 0.97 } : undefined}
+                  whileTap={
+                    !isAnswered && !isSubmitting ? { scale: 0.97 } : undefined
+                  }
                   className={`min-h-24 rounded-2xl border-b-4 px-5 py-4 text-left text-2xl transition sm:text-3xl ${
                     selected
                       ? 'border-(--main-color) bg-(--main-color)/10 text-(--text-color)'
@@ -350,7 +397,11 @@ export default function SparkVocabularyChallenge({
         )}
       </motion.div>
 
-      {requestError && <p className='text-center text-sm font-semibold text-rose-600'>{requestError}</p>}
+      {requestError && (
+        <p className='text-center text-sm font-semibold text-rose-600'>
+          {requestError}
+        </p>
+      )}
 
       {!isAnswered && (isTileQuestion || isMatchingQuestion) && (
         <GameBottomBar
@@ -367,15 +418,31 @@ export default function SparkVocabularyChallenge({
       )}
 
       {feedback && (
-        <GameBottomBar
-          state={feedback.result.isCorrect ? 'correct' : 'wrong'}
-          onAction={continueAfterFeedback}
-          canCheck={false}
-          hideRetry
-          feedbackTitle={feedback.result.isCorrect ? '答对了！' : '正确答案'}
-          feedbackContent={feedbackContent(feedback.result)}
-          actionLabel='继续'
-        />
+        <motion.div
+          initial={{ opacity: 0, y: 8 }}
+          animate={{ opacity: 1, y: 0 }}
+          role='status'
+          className={`flex items-center justify-between gap-3 border-l-4 px-2 py-2 ${
+            feedback.result.isCorrect
+              ? 'border-emerald-500 text-emerald-700'
+              : 'border-rose-500 text-rose-700'
+          }`}
+        >
+          <p className='min-w-0 text-base font-semibold sm:text-lg'>
+            <span className='mr-2 text-xl' aria-hidden='true'>
+              {feedback.result.isCorrect ? '✓' : '！'}
+            </span>
+            {feedback.result.isCorrect ? '答对了' : '正确答案：'}{' '}
+            {feedbackContent(feedback.result)}
+          </p>
+          <button
+            type='button'
+            className='shrink-0 rounded-xl px-4 py-2 font-bold text-(--main-color) transition hover:bg-(--main-color)/10'
+            onClick={continueAfterFeedback}
+          >
+            继续
+          </button>
+        </motion.div>
       )}
     </div>
   );
