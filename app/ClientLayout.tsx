@@ -113,7 +113,17 @@ export default function ClientLayout({
   }, [fontsModule, effectiveFont]);
 
   const pathname = usePathname();
+  const [isSparkEmbed, setIsSparkEmbed] = useState(false);
   const previousPathnameRef = useRef<string | null>(null);
+
+  useEffect(() => {
+    // Keep the server and first client render identical; query state is read after hydration.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    setIsSparkEmbed(
+      typeof window !== 'undefined' &&
+        new URLSearchParams(window.location.search).get('embed') === 'spark',
+    );
+  }, []);
 
   useEffect(() => {
     const previousPathname = previousPathnameRef.current;
@@ -318,13 +328,14 @@ export default function ClientLayout({
   return (
     <div
       data-scroll-restoration-id='container'
+      data-spark-embed={isSparkEmbed ? 'true' : undefined}
       className={clsx(
         'min-h-[100dvh] max-w-[100dvw] bg-(--background-color) text-(--main-color)',
         fontClassName,
       )}
       style={{
-        height: '100dvh',
-        overflowY: 'auto',
+        height: isSparkEmbed ? 'auto' : '100dvh',
+        overflowY: isSparkEmbed ? 'visible' : 'auto',
         ...(() => {
           if (!isPremiumThemeId(effectiveTheme)) return {};
 
@@ -373,7 +384,7 @@ export default function ClientLayout({
       <AchievementPromptsContainer />
       <AchievementIntegration />
       <BackToTop />
-      <MobileBottomBar />
+      {!isSparkEmbed && <MobileBottomBar />}
     </div>
   );
 }
